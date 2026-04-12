@@ -16,6 +16,7 @@ public:
 
 private slots:
     void updateUiState();
+    void onErrorOccurred(const QString &errorMessage);
 
 private:
     AudioSettings m_audio;

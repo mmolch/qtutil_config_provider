@@ -20,6 +20,7 @@ class AudioSettings : public QObject {
 
 public:
     explicit AudioSettings(QObject* parent = nullptr);
+    bool init();
 
     // Read-only access to the current state
     const AudioData& data() const { return m_data; }
@@ -31,6 +32,7 @@ public:
 signals:
     // Emitted only when the parsed data ACTUALLY changes
     void dataChanged();
+    void errorOccurred(const QString &errorMessage);
 
 private slots:
     // Internal handler for the ConfigProvider

@@ -18,22 +18,16 @@ class ConfigProvider : public QObject {
     Q_OBJECT
 
 public:
-    enum class Option {
-        None = 0,
-        EnableAutoSave = 1 << 0,
-        EnableFileWatcher = 1 << 1
-    };
-    Q_DECLARE_FLAGS(Options, Option)
-    Q_FLAG(Options)
-
-    // Default: Both AutoSave and FileWatcher are enabled
-    static constexpr Options DefaultOptions = Options(Option::EnableAutoSave) | Option::EnableFileWatcher;
-
     explicit ConfigProvider(const QString &schemaPath,
                             const QStringList &configPaths,
-                            Options options = DefaultOptions,
                             QObject *parent = nullptr);
     ~ConfigProvider() override;
+
+    /**
+     * @brief Loads the schema and performs the initial configuration load.
+     * @return True if the schema loaded and validation succeeded, false otherwise.
+     */
+    bool init();
 
     /**
      * @brief Thread-safe access to the current configuration.
@@ -46,8 +40,19 @@ public:
      */
     bool updateConfig(const QJsonObject &diff);
 
+    // --- Runtime Toggles ---
+    bool autoSaveEnabled() const;
+    void setAutoSaveEnabled(bool enabled);
+
+    bool fileWatcherEnabled() const;
+    void setFileWatcherEnabled(bool enabled);
+
 public slots:
-    void reload();
+    /**
+     * @brief Reloads configuration from disk.
+     * @return True if successful, false on errors (emits errorOccurred).
+     */
+    bool reload();
 
     /**
      * @brief Flushes any pending changes to disk immediately.
@@ -66,14 +71,17 @@ private slots:
     void onFileChanged(const QString &path);
 
 private:
-    const QJsonObject m_schema;
+    const QString m_schemaPath;
     const QStringList m_configPaths;
-    const Options m_options;
 
     mutable QReadWriteLock m_lock;
 
+    QJsonObject m_schema;
     QJsonObject m_currentConfig;
     QJsonObject m_pendingDiff; // Changes in memory not yet flushed to disk
+
+    bool m_autoSaveEnabled;
+    bool m_fileWatcherEnabled;
 
     QFileSystemWatcher *m_watcher = nullptr;
     QTimer m_saveTimer;
@@ -81,7 +89,5 @@ private:
     void setupFileWatching();
     bool loadAndMergeInternal(QJsonObject &outConfig, QJsonObject &outDiff);
 };
-
-Q_DECLARE_OPERATORS_FOR_FLAGS(ConfigProvider::Options)
 
 } // namespace mmolch::qtutil

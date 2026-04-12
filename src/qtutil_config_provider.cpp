@@ -13,37 +13,52 @@ Q_LOGGING_CATEGORY(lcConfigProvider, "mmolch.qtutil.configprovider")
 
 ConfigProvider::ConfigProvider(const QString &schemaPath,
                                const QStringList &configPaths,
-                               Options options,
                                QObject *parent)
     : QObject(parent)
-    , m_schema([&schemaPath]() {
-        auto result = json_load(schemaPath);
-        if (!result) {
-            qCCritical(lcConfigProvider) << "Failed to load schema:" << result.error().message;
-            return QJsonObject();
-        }
-        return result.value();
-    }())
+    , m_schemaPath(schemaPath)
     , m_configPaths(configPaths)
-    , m_options(options)
+    , m_autoSaveEnabled(true)
+    , m_fileWatcherEnabled(true)
 {
     m_saveTimer.setSingleShot(true);
     m_saveTimer.setInterval(1000);
     connect(&m_saveTimer, &QTimer::timeout, this, &ConfigProvider::save);
-
-    if (m_options.testFlag(Option::EnableFileWatcher)) {
-        m_watcher = new QFileSystemWatcher(this);
-        setupFileWatching();
-    }
-
-    reload();
 }
 
 ConfigProvider::~ConfigProvider() {
     // Final flush of any debounced changes before destruction
-    if (m_options.testFlag(Option::EnableAutoSave)) {
+    if (m_autoSaveEnabled) {
         save();
     }
+}
+
+bool ConfigProvider::init() {
+    auto result = json_load(m_schemaPath);
+    if (!result) {
+        QString err = QStringLiteral("Failed to load schema from %1: %2")
+        .arg(m_schemaPath, result.error().message);
+        qCCritical(lcConfigProvider) << err;
+        emit errorOccurred(err);
+        return false;
+    }
+
+    {
+        QWriteLocker locker(&m_lock);
+        // Guard against multiple calls to init()
+        if (!m_schema.isEmpty()) return true;
+        m_schema = result.value();
+    }
+
+    // Apply the initial file watcher state
+    if (m_fileWatcherEnabled) {
+        if (!m_watcher) {
+            m_watcher = new QFileSystemWatcher(this);
+            connect(m_watcher, &QFileSystemWatcher::fileChanged, this, &ConfigProvider::onFileChanged);
+        }
+        setupFileWatching();
+    }
+
+    return reload();
 }
 
 QJsonObject ConfigProvider::currentConfig() const {
@@ -51,22 +66,76 @@ QJsonObject ConfigProvider::currentConfig() const {
     return m_currentConfig;
 }
 
-void ConfigProvider::reload() {
+bool ConfigProvider::autoSaveEnabled() const {
+    QReadLocker locker(&m_lock);
+    return m_autoSaveEnabled;
+}
+
+void ConfigProvider::setAutoSaveEnabled(bool enabled) {
+    QWriteLocker locker(&m_lock);
+    if (m_autoSaveEnabled == enabled) return;
+
+    m_autoSaveEnabled = enabled;
+
+    if (m_autoSaveEnabled) {
+        if (!m_pendingDiff.isEmpty()) m_saveTimer.start();
+    } else {
+        m_saveTimer.stop();
+    }
+}
+
+bool ConfigProvider::fileWatcherEnabled() const {
+    QReadLocker locker(&m_lock);
+    return m_fileWatcherEnabled;
+}
+
+void ConfigProvider::setFileWatcherEnabled(bool enabled) {
+    QWriteLocker locker(&m_lock);
+    if (m_fileWatcherEnabled == enabled) return;
+
+    m_fileWatcherEnabled = enabled;
+
+    if (m_fileWatcherEnabled) {
+        if (!m_watcher) {
+            m_watcher = new QFileSystemWatcher(this);
+            connect(m_watcher, &QFileSystemWatcher::fileChanged, this, &ConfigProvider::onFileChanged);
+        }
+        for (const QString &path : m_configPaths) {
+            if (QFileInfo::exists(path) && !m_watcher->files().contains(path)) {
+                m_watcher->addPath(path);
+            }
+        }
+    } else {
+        if (m_watcher) {
+            const QStringList files = m_watcher->files();
+            if (!files.isEmpty()) {
+                m_watcher->removePaths(files);
+            }
+        }
+    }
+}
+
+bool ConfigProvider::reload() {
     QJsonObject newConfig;
     QJsonObject diff;
 
     {
         QWriteLocker locker(&m_lock);
-        if (!loadAndMergeInternal(newConfig, diff)) return;
+        if (m_schema.isEmpty()) {
+            // Failsafe in case reload() is called before init()
+            return false;
+        }
 
-        if (diff.isEmpty()) return;
+        if (!loadAndMergeInternal(newConfig, diff)) return false;
+        if (diff.isEmpty()) return true;
 
         m_currentConfig = newConfig;
-        // If disk changed externally, we discard pending saves to avoid overwriting newer data
+        // If disk changed externally, discard pending saves to avoid overwriting newer data
         m_pendingDiff = QJsonObject{};
     }
 
     emit configChanged(diff);
+    return true;
 }
 
 bool ConfigProvider::loadAndMergeInternal(QJsonObject &outConfig, QJsonObject &outDiff) {
@@ -83,7 +152,6 @@ bool ConfigProvider::loadAndMergeInternal(QJsonObject &outConfig, QJsonObject &o
     }
 
     outConfig = result.value();
-    // Diff current memory against new disk load
     outDiff = json_diff(outConfig, m_currentConfig, JsonDiffOption::Recursive | JsonDiffOption::ExplicitNull);
     return true;
 }
@@ -94,6 +162,8 @@ bool ConfigProvider::updateConfig(const QJsonObject &diff) {
 
     {
         QWriteLocker locker(&m_lock);
+
+        if (m_schema.isEmpty()) return false;
 
         newConfig = json_merge_with_schema(m_currentConfig, diff, m_schema);
         if (!json_validate(newConfig, m_schema)) {
@@ -108,7 +178,7 @@ bool ConfigProvider::updateConfig(const QJsonObject &diff) {
         m_currentConfig = newConfig;
         m_pendingDiff = json_merge_with_schema(m_pendingDiff, actualChanges, m_schema);
 
-        if (m_options.testFlag(Option::EnableAutoSave)) {
+        if (m_autoSaveEnabled) {
             m_saveTimer.start();
         }
     }
@@ -120,9 +190,8 @@ bool ConfigProvider::updateConfig(const QJsonObject &diff) {
 bool ConfigProvider::save() {
     QWriteLocker locker(&m_lock);
 
-    if (m_pendingDiff.isEmpty()) return true;
+    if (m_pendingDiff.isEmpty() || m_schema.isEmpty()) return true;
 
-    // 1. Calculate base (everything except the last path)
     QJsonObject baseConfig;
     if (m_configPaths.size() > 1) {
         QStringList basePaths = m_configPaths;
@@ -132,7 +201,6 @@ bool ConfigProvider::save() {
         if (baseResult) baseConfig = baseResult.value();
     }
 
-    // 2. Diff current memory against the base to find what to write to the user file
     QJsonObject saveDiff = json_diff(m_currentConfig, baseConfig,
                                      JsonDiffOption::Recursive | JsonDiffOption::ExplicitNull);
 
@@ -141,7 +209,7 @@ bool ConfigProvider::save() {
     const QString finalWritePath = targetInfo.isSymLink() ? targetInfo.symLinkTarget() : targetPath;
     QDir().mkpath(QFileInfo(finalWritePath).absolutePath());
 
-    if (m_watcher) m_watcher->blockSignals(true);
+    if (m_watcher && m_fileWatcherEnabled) m_watcher->blockSignals(true);
 
     QSaveFile file(finalWritePath);
     bool success = false;
@@ -153,7 +221,7 @@ bool ConfigProvider::save() {
         }
     }
 
-    if (m_watcher) {
+    if (m_watcher && m_fileWatcherEnabled) {
         if (!m_watcher->files().contains(finalWritePath) && QFileInfo::exists(finalWritePath))
             m_watcher->addPath(finalWritePath);
         m_watcher->blockSignals(false);
@@ -164,13 +232,19 @@ bool ConfigProvider::save() {
 
 void ConfigProvider::setupFileWatching() {
     if (!m_watcher) return;
-    connect(m_watcher, &QFileSystemWatcher::fileChanged, this, &ConfigProvider::onFileChanged);
     for (const QString &path : m_configPaths) {
-        if (QFileInfo::exists(path)) m_watcher->addPath(path);
+        if (QFileInfo::exists(path) && !m_watcher->files().contains(path)) {
+            m_watcher->addPath(path);
+        }
     }
 }
 
 void ConfigProvider::onFileChanged(const QString &path) {
+    {
+        QReadLocker locker(&m_lock);
+        if (!m_fileWatcherEnabled) return;
+    }
+
     if (m_watcher && !m_watcher->files().contains(path) && QFileInfo::exists(path)) {
         m_watcher->addPath(path);
     }

@@ -3,6 +3,7 @@
 #include <QSlider>
 #include <QProgressBar>
 #include <QCheckBox>
+#include <QMessageBox>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -35,6 +36,11 @@ MainWindow::MainWindow(QWidget *parent)
     // --- 2. Wire Settings Object TO the UI ---
     connect(&m_audio, &AudioSettings::dataChanged, this, &MainWindow::updateUiState);
 
+    connect(&m_audio, &AudioSettings::errorOccurred, this, &MainWindow::onErrorOccurred);
+
+    if (!m_audio.init())
+        return;
+
     // --- 3. Initial UI Sync ---
     updateUiState();
 }
@@ -55,4 +61,12 @@ void MainWindow::updateUiState()
     // The reaction element updates based on the typed domain data
     m_volumeIndicator->setValue(currentData.muted ? 0 : currentData.volume);
     m_volumeIndicator->setFormat(currentData.muted ? "MUTED" : "%p%");
+}
+
+void MainWindow::onErrorOccurred(const QString &errorMessage)
+{
+    auto msgBox = new QMessageBox{this};
+    msgBox->setText(errorMessage);
+    msgBox->setModal(true);
+    msgBox->show();
 }

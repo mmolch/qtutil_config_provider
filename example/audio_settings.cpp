@@ -12,19 +12,24 @@ AudioData AudioData::fromJson(const QJsonObject& obj) {
 AudioSettings::AudioSettings(QObject* parent)
     : QObject(parent)
     , m_config(
-          "example/data/audio.schema.json",
-          {
-              "example/data/audio.default.json",
-              "example/data/audio.user.json",
-              "build/audio.demo.json"
-          },
-          ConfigProvider::DefaultOptions,
-          this
-      )
-    , m_data(AudioData::fromJson(m_config.currentConfig()))
+        "example/data/audio.schema.json",
+        {
+            "example/data/audio.default.json",
+            "example/data/audio.user.json",
+            "build/audio.demo.json"
+        },
+        this
+    )
+    , m_data()
 {
     // Wire up the internal config provider
     connect(&m_config, &ConfigProvider::configChanged, this, &AudioSettings::onConfigChanged);
+    connect(&m_config, &ConfigProvider::errorOccurred, this, &AudioSettings::errorOccurred);
+}
+
+bool AudioSettings::init()
+{
+    return m_config.init();
 }
 
 void AudioSettings::setVolume(int volume) {
