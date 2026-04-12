@@ -7,6 +7,8 @@
 #include <QString>
 #include <QStringList>
 #include <QTimer>
+#include <expected>
+#include <memory>
 
 class QFileSystemWatcher;
 
@@ -18,16 +20,18 @@ class ConfigProvider : public QObject {
     Q_OBJECT
 
 public:
-    explicit ConfigProvider(const QString &schemaPath,
-                            const QStringList &configPaths,
-                            QObject *parent = nullptr);
-    ~ConfigProvider() override;
 
     /**
-     * @brief Loads the schema and performs the initial configuration load.
-     * @return True if the schema loaded and validation succeeded, false otherwise.
+     * @brief Factory method to create a fully initialized ConfigProvider.
+     * * This safely parses the schema before the object is created.
+     * @return A valid ConfigProvider pointer, or an error message if the schema is missing/invalid.
      */
-    bool init();
+    static std::expected<ConfigProvider*, QString> create(
+        const QString &schemaPath,
+        const QStringList &configPaths,
+        QObject *parent = nullptr);
+
+    ~ConfigProvider() override;
 
     /**
      * @brief Thread-safe access to the current configuration.
@@ -71,12 +75,16 @@ private slots:
     void onFileChanged(const QString &path);
 
 private:
-    const QString m_schemaPath;
+    // Private constructor enforces the use of the static factory method
+    explicit ConfigProvider(QJsonObject validatedSchema,
+                            const QStringList &configPaths,
+                            QObject *parent);
+
+    const QJsonObject m_schema; // Schema is now guaranteed to be valid and immutable
     const QStringList m_configPaths;
 
     mutable QReadWriteLock m_lock;
 
-    QJsonObject m_schema;
     QJsonObject m_currentConfig;
     QJsonObject m_pendingDiff; // Changes in memory not yet flushed to disk
 

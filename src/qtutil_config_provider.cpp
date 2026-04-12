@@ -11,11 +11,41 @@ namespace mmolch::qtutil {
 
 Q_LOGGING_CATEGORY(lcConfigProvider, "mmolch.qtutil.configprovider")
 
-ConfigProvider::ConfigProvider(const QString &schemaPath,
+std::expected<ConfigProvider*, QString> ConfigProvider::create(
+    const QString &schemaPath,
+    const QStringList &configPaths,
+    QObject *parent)
+{
+    // 1. Validate dependencies before constructing the object
+    auto schemaResult = json_load(schemaPath);
+    if (!schemaResult) {
+        return std::unexpected(QStringLiteral("Failed to load schema from %1: %2")
+                                   .arg(schemaPath, schemaResult.error().message));
+    }
+
+    // 1. Validate current config before constructing the object
+    auto currentConfig = json_load_and_merge_with_schema(configPaths, schemaResult.value());
+    if (!currentConfig) {
+        QString fullError;
+        for (const auto &err : currentConfig.error()) {
+            fullError += err.message + "\n";
+        }
+        return std::unexpected(fullError);
+    }
+
+    // 2. Create the provider using the private constructor
+    ConfigProvider* provider = new ConfigProvider(schemaResult.value(), configPaths, parent);
+    provider->m_currentConfig = currentConfig.value();
+
+
+    return provider;
+}
+
+ConfigProvider::ConfigProvider(QJsonObject validatedSchema,
                                const QStringList &configPaths,
                                QObject *parent)
     : QObject(parent)
-    , m_schemaPath(schemaPath)
+    , m_schema(std::move(validatedSchema))
     , m_configPaths(configPaths)
     , m_autoSaveEnabled(true)
     , m_fileWatcherEnabled(true)
@@ -23,42 +53,18 @@ ConfigProvider::ConfigProvider(const QString &schemaPath,
     m_saveTimer.setSingleShot(true);
     m_saveTimer.setInterval(1000);
     connect(&m_saveTimer, &QTimer::timeout, this, &ConfigProvider::save);
+
+    if (m_fileWatcherEnabled) {
+        m_watcher = new QFileSystemWatcher(this);
+        connect(m_watcher, &QFileSystemWatcher::fileChanged, this, &ConfigProvider::onFileChanged);
+        setupFileWatching();
+    }
 }
 
 ConfigProvider::~ConfigProvider() {
-    // Final flush of any debounced changes before destruction
     if (m_autoSaveEnabled) {
         save();
     }
-}
-
-bool ConfigProvider::init() {
-    auto result = json_load(m_schemaPath);
-    if (!result) {
-        QString err = QStringLiteral("Failed to load schema from %1: %2")
-        .arg(m_schemaPath, result.error().message);
-        qCCritical(lcConfigProvider) << err;
-        emit errorOccurred(err);
-        return false;
-    }
-
-    {
-        QWriteLocker locker(&m_lock);
-        // Guard against multiple calls to init()
-        if (!m_schema.isEmpty()) return true;
-        m_schema = result.value();
-    }
-
-    // Apply the initial file watcher state
-    if (m_fileWatcherEnabled) {
-        if (!m_watcher) {
-            m_watcher = new QFileSystemWatcher(this);
-            connect(m_watcher, &QFileSystemWatcher::fileChanged, this, &ConfigProvider::onFileChanged);
-        }
-        setupFileWatching();
-    }
-
-    return reload();
 }
 
 QJsonObject ConfigProvider::currentConfig() const {
@@ -100,11 +106,7 @@ void ConfigProvider::setFileWatcherEnabled(bool enabled) {
             m_watcher = new QFileSystemWatcher(this);
             connect(m_watcher, &QFileSystemWatcher::fileChanged, this, &ConfigProvider::onFileChanged);
         }
-        for (const QString &path : m_configPaths) {
-            if (QFileInfo::exists(path) && !m_watcher->files().contains(path)) {
-                m_watcher->addPath(path);
-            }
-        }
+        setupFileWatching();
     } else {
         if (m_watcher) {
             const QStringList files = m_watcher->files();
@@ -121,16 +123,10 @@ bool ConfigProvider::reload() {
 
     {
         QWriteLocker locker(&m_lock);
-        if (m_schema.isEmpty()) {
-            // Failsafe in case reload() is called before init()
-            return false;
-        }
-
         if (!loadAndMergeInternal(newConfig, diff)) return false;
         if (diff.isEmpty()) return true;
 
         m_currentConfig = newConfig;
-        // If disk changed externally, discard pending saves to avoid overwriting newer data
         m_pendingDiff = QJsonObject{};
     }
 
@@ -163,8 +159,6 @@ bool ConfigProvider::updateConfig(const QJsonObject &diff) {
     {
         QWriteLocker locker(&m_lock);
 
-        if (m_schema.isEmpty()) return false;
-
         newConfig = json_merge_with_schema(m_currentConfig, diff, m_schema);
         if (!json_validate(newConfig, m_schema)) {
             qCWarning(lcConfigProvider) << "Validation failed for update.";
@@ -190,7 +184,7 @@ bool ConfigProvider::updateConfig(const QJsonObject &diff) {
 bool ConfigProvider::save() {
     QWriteLocker locker(&m_lock);
 
-    if (m_pendingDiff.isEmpty() || m_schema.isEmpty()) return true;
+    if (m_pendingDiff.isEmpty()) return true;
 
     QJsonObject baseConfig;
     if (m_configPaths.size() > 1) {
@@ -216,14 +210,20 @@ bool ConfigProvider::save() {
     if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         file.write(QJsonDocument(saveDiff).toJson());
         if (file.commit()) {
+            qCDebug(lcConfigProvider) << "Saved configuration to" << finalWritePath;
             m_pendingDiff = QJsonObject{};
             success = true;
+        } else {
+            qCCritical(lcConfigProvider) << "Failed to commit config to" << finalWritePath;
         }
+    } else {
+        qCCritical(lcConfigProvider) << "Failed to open" << finalWritePath << "for saving:" << file.errorString();
     }
 
     if (m_watcher && m_fileWatcherEnabled) {
-        if (!m_watcher->files().contains(finalWritePath) && QFileInfo::exists(finalWritePath))
+        if (!m_watcher->files().contains(finalWritePath) && QFileInfo::exists(finalWritePath)) {
             m_watcher->addPath(finalWritePath);
+        }
         m_watcher->blockSignals(false);
     }
 

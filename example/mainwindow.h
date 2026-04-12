@@ -1,5 +1,6 @@
 #pragma once
 
+#include <expected>
 #include <QMainWindow>
 #include <QSlider>
 #include <QCheckBox>
@@ -10,16 +11,19 @@
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
+    Q_DISABLE_COPY(MainWindow)
 
 public:
-    MainWindow(QWidget *parent = nullptr);
+    static std::expected<MainWindow*, QString> create(QWidget *parent = nullptr);
 
 private slots:
     void updateUiState();
     void onErrorOccurred(const QString &errorMessage);
 
 private:
-    AudioSettings m_audio;
+    MainWindow(QWidget *parent = nullptr);
+
+    AudioSettings *m_audio;
 
     QSlider *m_volumeSlider;
     QCheckBox *m_muteCheckBox;

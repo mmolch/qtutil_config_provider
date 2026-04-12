@@ -9,42 +9,49 @@ AudioData AudioData::fromJson(const QJsonObject& obj) {
     };
 }
 
-AudioSettings::AudioSettings(QObject* parent)
+AudioSettings::AudioSettings(QObject *parent)
     : QObject(parent)
-    , m_config(
-        "example/data/audio.schema.json",
-        {
-            "example/data/audio.default.json",
-            "example/data/audio.user.json",
-            "build/audio.demo.json"
-        },
-        this
-    )
-    , m_data()
-{
-    // Wire up the internal config provider
-    connect(&m_config, &ConfigProvider::configChanged, this, &AudioSettings::onConfigChanged);
-    connect(&m_config, &ConfigProvider::errorOccurred, this, &AudioSettings::errorOccurred);
-}
+{}
 
-bool AudioSettings::init()
+
+std::expected<AudioSettings *, QString> AudioSettings::create(QObject *parent)
 {
-    return m_config.init();
+    auto config = ConfigProvider::create("example/data/audio.schema.json",
+                                         {
+                                             "example/data/audio.default.json",
+                                             "example/data/audio.user.json",
+                                             "build/audio.demo.json"
+                                         });
+    if (!config)
+        return std::unexpected(config.error());
+
+    //qDebug() << "volume" << config.value()->currentConfig().value("volume");
+
+    auto* settings = new AudioSettings{parent};
+    config.value()->setParent(settings);
+    settings->m_config = config.value();
+    settings->m_data = AudioData::fromJson(settings->m_config->currentConfig());
+
+    // Wire up the internal config provider
+    connect(settings->m_config, &ConfigProvider::configChanged, settings, &AudioSettings::onConfigChanged);
+    connect(settings->m_config, &ConfigProvider::errorOccurred, settings, &AudioSettings::errorOccurred);
+
+    return settings;
 }
 
 void AudioSettings::setVolume(int volume) {
     // Push the partial change to the config provider
-    m_config.updateConfig({{"volume", volume}});
+    m_config->updateConfig({{"volume", volume}});
 }
 
 void AudioSettings::setMuted(bool muted) {
     // Push the partial change to the config provider
-    m_config.updateConfig({{"muted", muted}});
+    m_config->updateConfig({{"muted", muted}});
 }
 
 void AudioSettings::onConfigChanged(const QJsonObject& /*diff*/) {
     // 1. Parse the newly merged configuration
-    AudioData newData = AudioData::fromJson(m_config.currentConfig());
+    AudioData newData = AudioData::fromJson(m_config->currentConfig());
 
     // 2. Prevent redundant UI updates if the change didn't affect our fields
     if (m_data == newData) {

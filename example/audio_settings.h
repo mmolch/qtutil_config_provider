@@ -1,11 +1,13 @@
 #pragma once
 
+#include <expected>
+
 #include <QObject>
 #include "mmolch/qtutil_config_provider.h"
 
 // 1. Strongly typed data model
 struct AudioData {
-    int volume = 50;
+    int volume = 23;
     bool muted = false;
 
     // C++20 auto-generated equality operator for easy change detection
@@ -17,10 +19,10 @@ struct AudioData {
 // 2. The Controller object the UI will actually interact with
 class AudioSettings : public QObject {
     Q_OBJECT
+    Q_DISABLE_COPY(AudioSettings)
 
 public:
-    explicit AudioSettings(QObject* parent = nullptr);
-    bool init();
+    static std::expected<AudioSettings*, QString> create(QObject *parent);
 
     // Read-only access to the current state
     const AudioData& data() const { return m_data; }
@@ -39,6 +41,8 @@ private slots:
     void onConfigChanged(const QJsonObject& diff);
 
 private:
-    mmolch::qtutil::ConfigProvider m_config;
+    explicit AudioSettings(QObject *parent);
+
+    mmolch::qtutil::ConfigProvider *m_config = nullptr;
     AudioData m_data;
 };
