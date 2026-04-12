@@ -5,7 +5,7 @@ find_package(Qt6 6.4 REQUIRED COMPONENTS
 add_executable(config_provider_example
     main.cpp
     audio_settings.h audio_settings.cpp
-    mainwindow.ui mainwindow.h mainwindow.cpp
+    mainwindow.h mainwindow.cpp
 )
 
 target_link_libraries(config_provider_example
