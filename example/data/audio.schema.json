@@ -1,0 +1,11 @@
+{
+    "type": "object",
+    "properties": {
+        "volume": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+        },
+        "muted": {"type": "boolean"}
+    }
+}
