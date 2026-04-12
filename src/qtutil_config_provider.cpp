@@ -23,7 +23,7 @@ std::expected<ConfigProvider*, QString> ConfigProvider::create(
                                    .arg(schemaPath, schemaResult.error().message));
     }
 
-    // 1. Validate current config before constructing the object
+    // 2. Validate current config before constructing the object
     auto currentConfig = json_load_and_merge_with_schema(configPaths, schemaResult.value());
     if (!currentConfig) {
         QString fullError;
@@ -33,10 +33,9 @@ std::expected<ConfigProvider*, QString> ConfigProvider::create(
         return std::unexpected(fullError);
     }
 
-    // 2. Create the provider using the private constructor
+    // 3. Create the provider using the private constructor
     ConfigProvider* provider = new ConfigProvider(schemaResult.value(), configPaths, parent);
     provider->m_currentConfig = currentConfig.value();
-
 
     return provider;
 }
