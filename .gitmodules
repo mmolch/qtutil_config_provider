@@ -1,0 +1,3 @@
+[submodule "libs/mmolch_qtutil_json"]
+	path = libs/mmolch_qtutil_json
+	url = git@github.com:mmolch/qtutil_json.git

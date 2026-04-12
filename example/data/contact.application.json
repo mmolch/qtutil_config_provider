@@ -1,0 +1,10 @@
+{
+    "first_name": "Andrea",
+    "last_name": "Anders",
+    "important": false,
+    "address": {
+        "city": "Aschaffenburg",
+        "postal_code": 45937,
+        "street": "Andersfelder Weg 27"
+    }
+}
