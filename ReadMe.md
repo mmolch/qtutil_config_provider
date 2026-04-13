@@ -31,7 +31,7 @@ You can modify the JSON file while the app is running — changes appear instant
 
 ---
 
-## 🛠Installation
+## Installation
 
 ```bash
 git clone https://github.com/<yourname>/mmolch_qtutil_config_provider
