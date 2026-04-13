@@ -10,7 +10,9 @@ project(${PROJECT_NAME}
 
 set(CMAKE_CXX_STANDARD 23)
 
-add_subdirectory(libs/mmolch_qtutil_json)
+if(NOT TARGET mmolch_qtutil_json)
+    add_subdirectory(libs/mmolch_qtutil_json)
+endif()
 
 find_package(Qt6 6.4 REQUIRED COMPONENTS
     Core
