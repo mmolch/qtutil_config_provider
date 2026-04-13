@@ -77,7 +77,7 @@ private slots:
 private:
     // Private constructor enforces the use of the static factory method
     explicit ConfigProvider(QJsonObject validatedSchema,
-                            const QStringList &configPaths,
+                            QStringList configPaths,
                             QObject *parent);
 
     const QJsonObject m_schema; // Schema is now guaranteed to be valid and immutable

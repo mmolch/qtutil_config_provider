@@ -34,7 +34,7 @@ std::expected<ConfigProvider*, QString> ConfigProvider::create(
     }
 
     // 3. Create the provider using the private constructor
-    ConfigProvider* provider = new ConfigProvider(std::move(schemaResult.value()), std::move(configPaths), parent);
+    ConfigProvider* provider = new ConfigProvider(schemaResult.value(), configPaths, parent);
     provider->m_currentConfig = currentConfig.value();
 
     provider->m_saveTimer.setSingleShot(true);
@@ -51,7 +51,7 @@ std::expected<ConfigProvider*, QString> ConfigProvider::create(
 }
 
 ConfigProvider::ConfigProvider(QJsonObject validatedSchema,
-                               const QStringList &configPaths,
+                               QStringList configPaths,
                                QObject *parent)
     : QObject(parent)
     , m_schema{std::move(validatedSchema)}
