@@ -4,7 +4,7 @@ using namespace mmolch::qtutil;
 
 AudioData AudioData::fromJson(const QJsonObject& obj) {
     return {
-        obj.value("volume").toInt(50),
+        obj.value("volume").toInt(27),
         obj.value("muted").toBool(false)
     };
 }
@@ -12,7 +12,6 @@ AudioData AudioData::fromJson(const QJsonObject& obj) {
 AudioSettings::AudioSettings(QObject *parent)
     : QObject(parent)
 {}
-
 
 std::expected<AudioSettings *, QString> AudioSettings::create(QObject *parent)
 {
@@ -24,8 +23,6 @@ std::expected<AudioSettings *, QString> AudioSettings::create(QObject *parent)
                                          });
     if (!config)
         return std::unexpected(config.error());
-
-    //qDebug() << "volume" << config.value()->currentConfig().value("volume");
 
     auto* settings = new AudioSettings{parent};
     config.value()->setParent(settings);
@@ -39,12 +36,23 @@ std::expected<AudioSettings *, QString> AudioSettings::create(QObject *parent)
     return settings;
 }
 
+const AudioData &AudioSettings::data() const noexcept {
+#ifndef NDEBUG
+    if (QThread::currentThread() != thread()) {
+        qWarning() << "AudioSettings::data() accessed from wrong thread!";
+        Q_ASSERT(false);
+    }
+#endif
+    return m_data;
+}
+
 void AudioSettings::setVolume(int volume) {
     // Push the partial change to the config provider
     m_config->updateConfig({{"volume", volume}});
 }
 
 void AudioSettings::setMuted(bool muted) {
+    qInfo() << "Thread:" << thread();
     // Push the partial change to the config provider
     m_config->updateConfig({{"muted", muted}});
 }

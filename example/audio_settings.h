@@ -3,6 +3,7 @@
 #include <expected>
 
 #include <QObject>
+#include <QThread>
 #include "mmolch/qtutil_config_provider.h"
 
 // 1. Strongly typed data model
@@ -25,7 +26,7 @@ public:
     static std::expected<AudioSettings*, QString> create(QObject *parent);
 
     // Read-only access to the current state
-    const AudioData& data() const { return m_data; }
+    const AudioData& data() const noexcept;
 
     // API for the UI to request changes
     void setVolume(int volume);

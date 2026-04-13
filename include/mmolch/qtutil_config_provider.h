@@ -8,7 +8,6 @@
 #include <QStringList>
 #include <QTimer>
 #include <expected>
-#include <memory>
 
 class QFileSystemWatcher;
 

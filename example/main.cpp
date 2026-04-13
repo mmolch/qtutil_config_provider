@@ -9,7 +9,6 @@ int main(int argc, char *argv[])
 {
     QApplication app{argc, argv};
 
-
     auto w = MainWindow::create();
     if (!w) {
         // FATAL STARTUP ERROR!

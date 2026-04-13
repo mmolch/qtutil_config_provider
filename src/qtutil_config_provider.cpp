@@ -34,8 +34,18 @@ std::expected<ConfigProvider*, QString> ConfigProvider::create(
     }
 
     // 3. Create the provider using the private constructor
-    ConfigProvider* provider = new ConfigProvider(schemaResult.value(), configPaths, parent);
+    ConfigProvider* provider = new ConfigProvider(std::move(schemaResult.value()), std::move(configPaths), parent);
     provider->m_currentConfig = currentConfig.value();
+
+    provider->m_saveTimer.setSingleShot(true);
+    provider->m_saveTimer.setInterval(1000);
+    connect(&provider->m_saveTimer, &QTimer::timeout, provider, &ConfigProvider::save);
+
+    if (provider->m_fileWatcherEnabled) {
+        provider->m_watcher = new QFileSystemWatcher(provider);
+        connect(provider->m_watcher, &QFileSystemWatcher::fileChanged, provider, &ConfigProvider::onFileChanged);
+        provider->setupFileWatching();
+    }
 
     return provider;
 }
@@ -44,21 +54,11 @@ ConfigProvider::ConfigProvider(QJsonObject validatedSchema,
                                const QStringList &configPaths,
                                QObject *parent)
     : QObject(parent)
-    , m_schema(std::move(validatedSchema))
-    , m_configPaths(configPaths)
+    , m_schema{std::move(validatedSchema)}
+    , m_configPaths{std::move(configPaths)}
     , m_autoSaveEnabled(true)
     , m_fileWatcherEnabled(true)
-{
-    m_saveTimer.setSingleShot(true);
-    m_saveTimer.setInterval(1000);
-    connect(&m_saveTimer, &QTimer::timeout, this, &ConfigProvider::save);
-
-    if (m_fileWatcherEnabled) {
-        m_watcher = new QFileSystemWatcher(this);
-        connect(m_watcher, &QFileSystemWatcher::fileChanged, this, &ConfigProvider::onFileChanged);
-        setupFileWatching();
-    }
-}
+{}
 
 ConfigProvider::~ConfigProvider() {
     if (m_autoSaveEnabled) {
