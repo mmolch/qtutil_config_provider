@@ -75,7 +75,9 @@ void MainWindow::updateUiState()
 void MainWindow::onErrorOccurred(const QString &errorMessage)
 {
     auto msgBox = new QMessageBox{this};
-    msgBox->setText(errorMessage);
+    msgBox->setWindowTitle("An error occurred");
+    msgBox->setIcon(QMessageBox::Critical);
+    msgBox->setText("An error occurred:\n\n" + errorMessage);
     msgBox->setModal(true);
     msgBox->show();
 }

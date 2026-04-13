@@ -52,7 +52,6 @@ void AudioSettings::setVolume(int volume) {
 }
 
 void AudioSettings::setMuted(bool muted) {
-    qInfo() << "Thread:" << thread();
     // Push the partial change to the config provider
     m_config->updateConfig({{"muted", muted}});
 }
