@@ -3,8 +3,6 @@ A lightweight Qt6 utility for **loading, merging, validating, watching, and upda
 
 This library is designed for Qt applications that need **strongly typed settings**, **live updates**, and **safe error handling** using `std::expected`.
 
----
-
 ## Features
 - **JSON Schema validation** (Draft‑7 subset)
 - **Deep, schema‑aware merging** of multiple config layers
@@ -18,8 +16,6 @@ This library is designed for Qt applications that need **strongly typed settings
 - **Exception‑free API** using `std::expected`
 - Integrates cleanly with **Qt Widgets**, **QML**, or backend logic
 
----
-
 ## Example Use Case
 The included example demonstrates a full round‑trip:
 
@@ -28,8 +24,6 @@ UI → ConfigProvider → JSON file → ConfigProvider → UI
 ```
 
 You can modify the JSON file while the app is running — changes appear instantly in the UI.
-
----
 
 ## Installation
 
@@ -44,8 +38,6 @@ cmake --build .
 Requires:
 - **Qt ≥ 6.4**
 - **C++23 compiler**
-
----
 
 ## Quick Start
 
@@ -74,8 +66,6 @@ connect(cfg, &ConfigProvider::configChanged, [](const QJsonObject& diff){
 cfg->updateConfig({{"volume", 42}});
 ```
 
----
-
 ## API Overview
 
 ### **Factory**
@@ -88,23 +78,17 @@ static std::expected<ConfigProvider*, QString> create(
 ```
 Validates schema → loads & merges configs → returns ready‑to‑use provider.
 
----
-
 ### **Reading**
 ```cpp
 QJsonObject currentConfig() const;
 ```
 Thread‑safe snapshot of the merged configuration.
 
----
-
 ### **Updating**
 ```cpp
 bool updateConfig(const QJsonObject& diff);
 ```
 Applies partial updates, validates them, merges them, and emits `configChanged`.
-
----
 
 ### **Runtime Controls**
 ```cpp
@@ -115,41 +99,16 @@ bool fileWatcherEnabled() const;
 void setFileWatcherEnabled(bool);
 ```
 
----
-
 ### **Manual I/O**
 ```cpp
 bool reload();  // Reload from disk
 bool save();    // Flush pending changes immediately
 ```
 
----
-
 ### **Signals**
 ```cpp
 void configChanged(const QJsonObject& diff);
 void errorOccurred(const QString& message);
 ```
-
----
-
-## Project Structure
-```
-mmolch_qtutil_config_provider/
- ├─ include/mmolch/qtutil_config_provider.h
- ├─ src/qtutil_config_provider.cpp
- ├─ libs/mmolch_qtutil_json/   # JSON utilities (load, merge, diff, validate)
- └─ example/                   # Full UI demo
-```
-
----
-
-## Example Screenshot (conceptual)
-- Slider updates JSON
-- JSON edits update UI
-- Mute checkbox syncs both ways
-
----
-
 ## License
 MIT License — free to use in commercial and open‑source projects.
