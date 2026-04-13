@@ -159,8 +159,14 @@ bool ConfigProvider::updateConfig(const QJsonObject &diff) {
         QWriteLocker locker(&m_lock);
 
         newConfig = json_merge_with_schema(m_currentConfig, diff, m_schema);
-        if (!json_validate(newConfig, m_schema)) {
-            qCWarning(lcConfigProvider) << "Validation failed for update.";
+        auto result = json_validate(newConfig, m_schema);
+        if (!result) {
+            QString fullError;
+            for (const auto &err : result.error()) {
+                qCWarning(lcConfigProvider) << "Config Error:" << err.message;
+                fullError += err.message + "\n";
+            }
+            emit errorOccurred(fullError.trimmed());
             return false;
         }
 
