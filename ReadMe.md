@@ -1,131 +1,155 @@
 # **mmolch_qtutil_config_provider**
-### *Schema‑validated, layered, auto‑reloading JSON configuration for Qt6*
+A lightweight Qt6 utility for **loading, merging, validating, watching, and updating JSON‑based configuration files** — with automatic schema validation, file watching, and UI‑friendly change notifications.
 
-`mmolch_qtutil_config_provider` is a lightweight Qt6 utility library that loads, validates, merges, and watches JSON configuration files. It is built on top of `mmolch_qtutil_json`, providing a high‑level, thread‑safe configuration provider suitable for Qt applications, daemons, and tools.
+This library is designed for Qt applications that need **strongly typed settings**, **live updates**, and **safe error handling** using `std::expected`.
 
 ---
 
 ## Features
-
-- **Layered configuration loading**
-  - Application, system, user, and ephemeral config layers
-  - Deep merge with schema‑aware merge strategies
-
-- **JSON Schema validation**
-  - Validates every config file before applying changes
-
-- **Automatic file watching**
-  - Reloads configuration when files change on disk
-
-- **Auto‑save support**
-  - In‑memory updates are flushed to disk automatically
-
-- **Thread‑safe access**
-  - Uses `QReadWriteLock` for concurrent reads and safe writes
-
-- **Diff‑based change notifications**
-  - Emits only the keys that actually changed
+- **JSON Schema validation** (Draft‑7 subset)
+- **Deep, schema‑aware merging** of multiple config layers
+  (default, user, runtime, etc.)
+- **Automatic file watching** with live reload
+- **Auto‑save** with debounced write‑back
+- **Thread‑safe access** to the current configuration
+- **Qt‑native signals**:
+  - `configChanged(diff)`
+  - `errorOccurred(message)`
+- **Exception‑free API** using `std::expected`
+- Integrates cleanly with **Qt Widgets**, **QML**, or backend logic
 
 ---
 
-## Installation
+## Example Use Case
+The included example demonstrates a full round‑trip:
 
-Add the library to your CMake project:
-
-```cmake
-add_subdirectory(mmolch_qtutil_config_provider)
-target_link_libraries(your_target PRIVATE mmolch_qtutil_config_provider)
+```
+UI → ConfigProvider → JSON file → ConfigProvider → UI
 ```
 
-Requires:
-
-- **Qt ≥ 6.4**
-- **C++23**
+You can modify the JSON file while the app is running — changes appear instantly in the UI.
 
 ---
 
-## Basic Usage
-
-```cpp
-using namespace mmolch::qtutil;
-
-ConfigProvider provider{
-    "schema.json",
-    {
-        "/etc/myapp/config.json",
-        "~/.config/myapp/config.json",
-        "runtime.json"
-    },
-    ConfigProvider::DefaultOptions
-};
-
-connect(&provider, &ConfigProvider::configChanged, [](const QJsonObject &diff){
-    qInfo() << "Config updated:" << diff;
-});
-
-auto cfg = provider.currentConfig();
-```
-
-To update configuration in memory:
-
-```cpp
-provider.updateConfig({
-    {"window", QJsonObject{{"width", 900}}}
-});
-```
-
----
-
-## Example
-
-A full working example is included under `example/`, demonstrating:
-
-- Schema validation
-- Layered config merging
-- Auto‑reload via `QFileSystemWatcher`
-- Diff‑based UI updates
-
-```cpp
-Contact contact;
-contact.configProvider().updateConfig({{"first_name", "Dieter"}});
-```
-
----
-
-## How It Works
-
-`ConfigProvider` internally:
-
-- Loads all configured JSON files
-- Validates each file against the provided schema
-- Merges them using `json_merge_inplace_with_schema()`
-- Watches files for changes
-- Emits:
-  - `configChanged(diff)` on success
-  - `errorOccurred(message)` on validation or parse errors
-
-From the document:
-> “Updates config in memory and schedules save if EnableAutoSave is set.”
-> “Emitted when the configuration changes… containing ONLY the keys that were altered.”
-
----
-
-## Building
+## 🛠Installation
 
 ```bash
+git clone https://github.com/<yourname>/mmolch_qtutil_config_provider
+cd mmolch_qtutil_config_provider
 mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release ..
 cmake --build .
 ```
 
-Enable tests:
+Requires:
+- **Qt ≥ 6.4**
+- **C++23 compiler**
 
-```bash
-cmake -DBUILD_TESTING=ON ..
+---
+
+## Quick Start
+
+```cpp
+using namespace mmolch::qtutil;
+
+auto provider = ConfigProvider::create(
+    "config.schema.json",
+    {
+        "config.default.json",
+        "config.user.json",
+        "runtime.json"
+    }
+);
+
+if (!provider) {
+    qWarning() << provider.error();
+    return;
+}
+
+auto* cfg = provider.value();
+connect(cfg, &ConfigProvider::configChanged, [](const QJsonObject& diff){
+    qDebug() << "Config updated:" << diff;
+});
+
+cfg->updateConfig({{"volume", 42}});
 ```
 
 ---
 
-## License
+## API Overview
 
-MIT License — see `LICENSE` for details.
+### **Factory**
+```cpp
+static std::expected<ConfigProvider*, QString> create(
+    const QString& schemaPath,
+    const QStringList& configPaths,
+    QObject* parent = nullptr
+);
+```
+Validates schema → loads & merges configs → returns ready‑to‑use provider.
+
+---
+
+### **Reading**
+```cpp
+QJsonObject currentConfig() const;
+```
+Thread‑safe snapshot of the merged configuration.
+
+---
+
+### **Updating**
+```cpp
+bool updateConfig(const QJsonObject& diff);
+```
+Applies partial updates, validates them, merges them, and emits `configChanged`.
+
+---
+
+### **Runtime Controls**
+```cpp
+bool autoSaveEnabled() const;
+void setAutoSaveEnabled(bool);
+
+bool fileWatcherEnabled() const;
+void setFileWatcherEnabled(bool);
+```
+
+---
+
+### **Manual I/O**
+```cpp
+bool reload();  // Reload from disk
+bool save();    // Flush pending changes immediately
+```
+
+---
+
+### **Signals**
+```cpp
+void configChanged(const QJsonObject& diff);
+void errorOccurred(const QString& message);
+```
+
+---
+
+## Project Structure
+```
+mmolch_qtutil_config_provider/
+ ├─ include/mmolch/qtutil_config_provider.h
+ ├─ src/qtutil_config_provider.cpp
+ ├─ libs/mmolch_qtutil_json/   # JSON utilities (load, merge, diff, validate)
+ └─ example/                   # Full UI demo
+```
+
+---
+
+## Example Screenshot (conceptual)
+- Slider updates JSON
+- JSON edits update UI
+- Mute checkbox syncs both ways
+
+---
+
+## License
+MIT License — free to use in commercial and open‑source projects.
