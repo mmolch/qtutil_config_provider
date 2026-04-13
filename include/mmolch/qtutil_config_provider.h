@@ -17,6 +17,7 @@ Q_DECLARE_LOGGING_CATEGORY(lcConfigProvider)
 
 class ConfigProvider : public QObject {
     Q_OBJECT
+    Q_DISABLE_COPY(ConfigProvider)
 
 public:
 
