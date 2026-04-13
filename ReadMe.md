@@ -1,43 +1,32 @@
 # **mmolch_qtutil_config_provider**
-A lightweight Qt6 utility for **loading, merging, validating, watching, and updating JSON‑based configuration files** — with automatic schema validation, file watching, and UI‑friendly change notifications.
+### *Schema‑validated, layered, auto‑reloading JSON configuration for Qt6*
 
-This library is designed for Qt applications that need **strongly typed settings**, **live updates**, and **safe error handling** using `std::expected`.
+`mmolch_qtutil_config_provider` is a lightweight Qt6 utility library that loads, validates, merges, and watches JSON configuration files. It is built on top of `mmolch_qtutil_json`, providing a high‑level, thread‑safe configuration provider suitable for Qt applications, daemons, and tools.
 
 ## Features
-- **JSON Schema validation** (Draft‑7 subset)
-- **Deep, schema‑aware merging** of multiple config layers
-  (default, user, runtime, etc.)
-- **Automatic file watching** with live reload
-- **Auto‑save** with debounced write‑back
-- **Thread‑safe access** to the current configuration
-- **Qt‑native signals**:
-  - `configChanged(diff)`
-  - `errorOccurred(message)`
-- **Exception‑free API** using `std::expected`
-- Integrates cleanly with **Qt Widgets**, **QML**, or backend logic
 
-## Example Use Case
-The included example demonstrates a full round‑trip:
+- **Layered configuration loading**
+  - Application, system, user, and ephemeral config layers
+  - Deep merge with schema‑aware merge strategies
 
-```
-UI → ConfigProvider → JSON file → ConfigProvider → UI
-```
+- **JSON Schema validation**
+  - Validates every config file before applying changes
 
-You can modify the JSON file while the app is running — changes appear instantly in the UI.
+- **Automatic file watching**
+  - Reloads configuration when files change on disk
 
-## Installation
+- **Auto‑save support**
+  - In‑memory updates are flushed to disk automatically
 
-```bash
-git clone https://github.com/<yourname>/mmolch_qtutil_config_provider
-cd mmolch_qtutil_config_provider
-mkdir build && cd build
-cmake -DCMAKE_BUILD_TYPE=Release ..
-cmake --build .
-```
+- **Thread‑safe access**
+  - Uses `QReadWriteLock` for concurrent reads and safe writes
 
-Requires:
-- **Qt ≥ 6.4**
-- **C++23 compiler**
+- **Diff‑based change notifications**
+  - Emits only the keys that actually changed
+
+- **Requirements**
+  - **Qt ≥ 6.4**
+  - **C++23 compiler**
 
 ## Quick Start
 
