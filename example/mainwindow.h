@@ -14,7 +14,7 @@ class MainWindow : public QMainWindow
     Q_DISABLE_COPY(MainWindow)
 
 public:
-    static std::expected<MainWindow*, QString> create(QWidget *parent = nullptr);
+    static std::expected<MainWindow*, QString> create();
 
 private slots:
     void updateUiState();

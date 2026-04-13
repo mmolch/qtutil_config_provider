@@ -25,13 +25,14 @@ MainWindow::MainWindow(QWidget *parent)
     setCentralWidget(central);
 }
 
-std::expected<MainWindow *, QString> MainWindow::create(QWidget *parent)
+std::expected<MainWindow *, QString> MainWindow::create()
 {
     auto settings = AudioSettings::create(nullptr);
     if (!settings)
         return std::unexpected(settings.error());
 
-    auto win = new MainWindow(parent);
+    auto win = new MainWindow;
+    win->setAttribute(Qt::WA_DeleteOnClose);
     settings.value()->setParent(win);
     win->m_audio = settings.value();
 
