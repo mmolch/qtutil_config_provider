@@ -6,6 +6,10 @@
             "minimum": 0,
             "maximum": 100
         },
-        "muted": {"type": "boolean"}
+        "muted": {"type": "boolean"},
+        "myarr": {
+            "type": "array",
+            "items": {"type": "string"}
+        }
     }
 }

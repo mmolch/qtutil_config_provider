@@ -71,6 +71,21 @@ QJsonObject ConfigProvider::currentConfig() const {
     return m_currentConfig;
 }
 
+std::expected<void, QString> ConfigProvider::validate(const QJsonObject &diff) const
+{
+    auto merged_config = json_merge_with_schema(m_currentConfig, diff, m_schema,
+                                                JsonMergeOption::Recursive | JsonMergeOption::OverrideNull);
+    auto result = json_validate(merged_config, m_schema);
+    if (!result) {
+        QString fullError;
+        for (const auto &err : result.error()) {
+            fullError += err.message + "\n";
+        }
+        return std::unexpected(fullError.trimmed());
+    }
+    return {};
+}
+
 bool ConfigProvider::autoSaveEnabled() const {
     QReadLocker locker(&m_lock);
     return m_autoSaveEnabled;

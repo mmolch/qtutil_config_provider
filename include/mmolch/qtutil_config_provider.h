@@ -39,6 +39,12 @@ public:
     QJsonObject currentConfig() const;
 
     /**
+     * @brief Validate a config change against the schema
+     * @return An error message describing the errors if the validation failed.
+     */
+    std::expected<void, QString> validate(const QJsonObject &diff) const;
+
+    /**
      * @brief Updates config in memory and schedules save if EnableAutoSave is set.
      * @return True if validation succeeded and in-memory state was updated.
      */
