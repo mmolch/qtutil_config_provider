@@ -57,8 +57,6 @@ void AudioSettings::setMuted(bool muted) {
 }
 
 void AudioSettings::onConfigChanged(const QJsonObject& diff) {
-    qDebug().noquote() << "AudioSettings::onConfigChanged" << diff;
-
     // 1. Parse the newly merged configuration
     AudioData newData = AudioData::fromJson(m_config->currentConfig());
 

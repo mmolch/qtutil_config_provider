@@ -27,8 +27,9 @@ std::expected<ConfigProvider*, QString> ConfigProvider::create(
     auto currentConfig = json_load_and_merge_with_schema(configPaths, schemaResult.value());
     if (!currentConfig) {
         QString fullError;
-        for (const auto &err : currentConfig.error()) {
-            fullError += err.message + "\n";
+        fullError += currentConfig.error().message + "\n";
+        for (const auto &err : std::as_const(currentConfig.error().validationErrors)) {
+            fullError += err.pointer + err.message + "\n";
         }
         return std::unexpected(fullError);
     }
@@ -56,8 +57,8 @@ ConfigProvider::ConfigProvider(QJsonObject validatedSchema,
     : QObject(parent)
     , m_schema{std::move(validatedSchema)}
     , m_configPaths{std::move(configPaths)}
-    , m_autoSaveEnabled(true)
-    , m_fileWatcherEnabled(true)
+    , m_autoSaveEnabled(false)
+    , m_fileWatcherEnabled(false)
 {}
 
 ConfigProvider::~ConfigProvider() {
@@ -153,9 +154,11 @@ bool ConfigProvider::loadAndMergeInternal(QJsonObject &outConfig, QJsonObject &o
 
     if (!result) {
         QString fullError;
-        for (const auto &err : result.error()) {
+        qCWarning(lcConfigProvider) << "Config Error:" << result.error().message;
+        fullError += result.error().message + "\n";
+        for (const auto &err : std::as_const(result.error().validationErrors)) {
             qCWarning(lcConfigProvider) << "Config Error:" << err.message;
-            fullError += err.message + "\n";
+            fullError += err.pointer + err.message + "\n";
         }
         emit errorOccurred(fullError.trimmed());
         return false;
