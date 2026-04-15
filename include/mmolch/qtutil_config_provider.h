@@ -20,6 +20,13 @@ class ConfigProvider : public QObject {
     Q_DISABLE_COPY(ConfigProvider)
 
 public:
+    class ValidatedConfig {
+        friend class ConfigProvider;
+        QJsonObject data;
+        explicit ValidatedConfig(QJsonObject d) : data(std::move(d)) {}
+    public:
+        const QJsonObject& json() const { return data; }
+    };
 
     /**
      * @brief Factory method to create a fully initialized ConfigProvider.
@@ -39,16 +46,12 @@ public:
     QJsonObject currentConfig() const;
 
     /**
-     * @brief Validate a config change against the schema
-     * @return An error message describing the errors if the validation failed.
-     */
-    std::expected<void, QString> validate(const QJsonObject &diff) const;
-
-    /**
      * @brief Updates config in memory and schedules save if EnableAutoSave is set.
      * @return True if validation succeeded and in-memory state was updated.
      */
     bool updateConfig(const QJsonObject &diff);
+    bool updateConfig(ValidatedConfig&& validated);
+    std::expected<ValidatedConfig, QString> previewUpdate(const QJsonObject &diff) const;
 
     // --- Runtime Toggles ---
     bool autoSaveEnabled() const;

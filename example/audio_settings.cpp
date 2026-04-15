@@ -33,6 +33,9 @@ std::expected<AudioSettings *, QString> AudioSettings::create(QObject *parent)
     connect(settings->m_config, &ConfigProvider::configChanged, settings, &AudioSettings::onConfigChanged);
     connect(settings->m_config, &ConfigProvider::errorOccurred, settings, &AudioSettings::errorOccurred);
 
+    settings->m_config->setAutoSaveEnabled(true);
+    settings->m_config->setFileWatcherEnabled(true);
+
     return settings;
 }
 

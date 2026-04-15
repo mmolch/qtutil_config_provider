@@ -29,9 +29,9 @@ std::expected<ConfigProvider*, QString> ConfigProvider::create(
         QString fullError;
         fullError += currentConfig.error().message + "\n";
         for (const auto &err : std::as_const(currentConfig.error().validationErrors)) {
-            fullError += err.pointer + err.message + "\n";
+            fullError += "[" + err.pointer + "] " + err.message + "\n";
         }
-        return std::unexpected(fullError);
+        return std::unexpected(fullError.trimmed());
     }
 
     // 3. Create the provider using the private constructor
@@ -70,21 +70,6 @@ ConfigProvider::~ConfigProvider() {
 QJsonObject ConfigProvider::currentConfig() const {
     QReadLocker locker(&m_lock);
     return m_currentConfig;
-}
-
-std::expected<void, QString> ConfigProvider::validate(const QJsonObject &diff) const
-{
-    auto merged_config = json_merge_with_schema(m_currentConfig, diff, m_schema,
-                                                JsonMergeOption::Recursive | JsonMergeOption::OverrideNull);
-    auto result = json_validate(merged_config, m_schema);
-    if (!result) {
-        QString fullError;
-        for (const auto &err : result.error()) {
-            fullError += err.message + "\n";
-        }
-        return std::unexpected(fullError.trimmed());
-    }
-    return {};
 }
 
 bool ConfigProvider::autoSaveEnabled() const {
@@ -157,8 +142,8 @@ bool ConfigProvider::loadAndMergeInternal(QJsonObject &outConfig, QJsonObject &o
         qCWarning(lcConfigProvider) << "Config Error:" << result.error().message;
         fullError += result.error().message + "\n";
         for (const auto &err : std::as_const(result.error().validationErrors)) {
-            qCWarning(lcConfigProvider) << "Config Error:" << err.message;
-            fullError += err.pointer + err.message + "\n";
+            qCWarning(lcConfigProvider) << "Config Error:" << err.pointer << err.message;
+            fullError += "[" + err.pointer + "] " + err.message + "\n";
         }
         emit errorOccurred(fullError.trimmed());
         return false;
@@ -182,7 +167,7 @@ bool ConfigProvider::updateConfig(const QJsonObject &diff) {
             QString fullError;
             for (const auto &err : result.error()) {
                 qCWarning(lcConfigProvider) << "Config Error:" << err.message;
-                fullError += err.message + "\n";
+                fullError += "[" + err.pointer + "] " + err.message + "\n";
             }
             emit errorOccurred(fullError.trimmed());
             return false;
@@ -202,6 +187,32 @@ bool ConfigProvider::updateConfig(const QJsonObject &diff) {
 
     emit configChanged(actualChanges);
     return true;
+}
+
+bool ConfigProvider::updateConfig(ValidatedConfig&& validated) {
+    QWriteLocker locker(&m_lock);
+    m_currentConfig = std::move(validated.data);
+    if (m_autoSaveEnabled) {
+        m_saveTimer.start();
+    }
+    emit configChanged(m_currentConfig);
+    return true;
+}
+
+std::expected<ConfigProvider::ValidatedConfig, QString> ConfigProvider::previewUpdate(const QJsonObject &diff) const
+{
+    QReadLocker locker(&m_lock);
+    QJsonObject newConfig = json_merge_with_schema(m_currentConfig, diff, m_schema);
+
+    auto result = json_validate(newConfig, m_schema);
+    if (!result) {
+        QString fullError;
+        for (const auto &err : result.error()) {
+            fullError += err.message + "\n";
+        }
+        return std::unexpected(fullError.trimmed());
+    }
+    return ValidatedConfig{newConfig};
 }
 
 bool ConfigProvider::save() {
