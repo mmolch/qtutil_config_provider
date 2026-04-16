@@ -1,7 +1,7 @@
 # **mmolch_qtutil_config_provider**
 ### *Schema‑validated, layered, auto‑reloading JSON configuration for Qt6*
 
-`mmolch_qtutil_config_provider` is a lightweight Qt6 utility library that loads, validates, merges, and watches JSON configuration files. It is built on top of `mmolch_qtutil_json`, providing a high‑level, thread‑safe configuration provider suitable for Qt applications, daemons, and tools.
+`mmolch_qtutil_config_provider` is a lightweight Qt6 utility library that loads, validates, merges, and watches JSON configuration files. It is built on top of `mmolch_qtutil_json`, providing a high‑level configuration provider suitable for Qt applications, daemons, and tools.
 
 ## Features
 
