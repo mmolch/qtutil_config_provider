@@ -18,9 +18,6 @@
 - **Auto‑save support**
   - In‑memory updates are flushed to disk automatically
 
-- **Thread‑safe access**
-  - Uses `QReadWriteLock` for concurrent reads and safe writes
-
 - **Diff‑based change notifications**
   - Emits only the keys that actually changed
 
@@ -62,6 +59,7 @@ cfg->updateConfig({{"volume", 42}});
 static std::expected<ConfigProvider*, QString> create(
     const QString& schemaPath,
     const QStringList& configPaths,
+    std::unique_ptr<ConfigValidator> validator = nullptr,
     QObject* parent = nullptr
 );
 ```
@@ -71,7 +69,6 @@ Validates schema → loads & merges configs → returns ready‑to‑use provide
 ```cpp
 QJsonObject currentConfig() const;
 ```
-Thread‑safe snapshot of the merged configuration.
 
 ### **Updating**
 ```cpp
