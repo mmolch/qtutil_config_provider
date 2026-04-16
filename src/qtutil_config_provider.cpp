@@ -163,6 +163,15 @@ bool ConfigProvider::loadAndMergeInternal(QJsonObject &outConfig, QJsonObject &o
         return false;
     }
 
+    if (m_validator) {
+        auto validation = m_validator->validate(result.value());
+        if (!validation) {
+            qCWarning(lcConfigProvider) << "Config Error:" << validation.error();
+            emit errorOccurred(validation.error());
+            return false;
+        }
+    }
+
     outConfig = result.value();
     outDiff = json_diff(outConfig, m_currentConfig, JsonDiffOption::Recursive | JsonDiffOption::ExplicitNull);
     return true;
