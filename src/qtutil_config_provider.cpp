@@ -11,19 +11,29 @@ namespace mmolch::qtutil {
 
 Q_LOGGING_CATEGORY(lcConfigProvider, "mmolch.qtutil.configprovider")
 
+#ifndef NDEBUG
+#define CHECK_THREAD() \
+do { \
+        if (QThread::currentThread() != this->thread()) { \
+            qCWarning(lcConfigProvider) << "Thread affinity violation in:" << Q_FUNC_INFO; \
+    } \
+} while (false)
+#else
+#define CHECK_THREAD() do {} while (false)
+#endif
+
 std::expected<ConfigProvider*, QString> ConfigProvider::create(
     const QString &schemaPath,
     const QStringList &configPaths,
+    std::unique_ptr<ConfigValidator> validator,
     QObject *parent)
 {
-    // 1. Validate dependencies before constructing the object
     auto schemaResult = json_load(schemaPath);
     if (!schemaResult) {
         return std::unexpected(QStringLiteral("Failed to load schema from %1: %2")
                                    .arg(schemaPath, schemaResult.error().message));
     }
 
-    // 2. Validate current config before constructing the object
     auto currentConfig = json_load_and_merge_with_schema(configPaths, schemaResult.value());
     if (!currentConfig) {
         QString fullError;
@@ -34,8 +44,14 @@ std::expected<ConfigProvider*, QString> ConfigProvider::create(
         return std::unexpected(fullError.trimmed());
     }
 
-    // 3. Create the provider using the private constructor
-    ConfigProvider* provider = new ConfigProvider(schemaResult.value(), configPaths, parent);
+    if (validator) {
+        auto result = validator->validate(currentConfig.value());
+        if (!result) {
+            return std::unexpected(result.error());
+        }
+    }
+
+    ConfigProvider* provider = new ConfigProvider(schemaResult.value(), configPaths, std::move(validator), parent);
     provider->m_currentConfig = currentConfig.value();
 
     provider->m_saveTimer.setSingleShot(true);
@@ -53,54 +69,55 @@ std::expected<ConfigProvider*, QString> ConfigProvider::create(
 
 ConfigProvider::ConfigProvider(QJsonObject validatedSchema,
                                QStringList configPaths,
+                               std::unique_ptr<ConfigValidator> validator,
                                QObject *parent)
     : QObject(parent)
     , m_schema{std::move(validatedSchema)}
     , m_configPaths{std::move(configPaths)}
+    , m_validator{std::move(validator)}
     , m_autoSaveEnabled(false)
     , m_fileWatcherEnabled(false)
 {}
 
 ConfigProvider::~ConfigProvider() {
+    CHECK_THREAD();
     if (m_autoSaveEnabled) {
         save();
     }
 }
 
 QJsonObject ConfigProvider::currentConfig() const {
-    QReadLocker locker(&m_lock);
+    CHECK_THREAD();
     return m_currentConfig;
 }
 
 bool ConfigProvider::autoSaveEnabled() const {
-    QReadLocker locker(&m_lock);
+    CHECK_THREAD();
     return m_autoSaveEnabled;
 }
 
 void ConfigProvider::setAutoSaveEnabled(bool enabled) {
-    QWriteLocker locker(&m_lock);
+    CHECK_THREAD();
     if (m_autoSaveEnabled == enabled) return;
 
     m_autoSaveEnabled = enabled;
-
     if (m_autoSaveEnabled) {
-        if (!m_pendingDiff.isEmpty()) m_saveTimer.start();
+        if (m_isDirty) m_saveTimer.start();
     } else {
         m_saveTimer.stop();
     }
 }
 
 bool ConfigProvider::fileWatcherEnabled() const {
-    QReadLocker locker(&m_lock);
+    CHECK_THREAD();
     return m_fileWatcherEnabled;
 }
 
 void ConfigProvider::setFileWatcherEnabled(bool enabled) {
-    QWriteLocker locker(&m_lock);
+    CHECK_THREAD();
     if (m_fileWatcherEnabled == enabled) return;
 
     m_fileWatcherEnabled = enabled;
-
     if (m_fileWatcherEnabled) {
         if (!m_watcher) {
             m_watcher = new QFileSystemWatcher(this);
@@ -118,17 +135,15 @@ void ConfigProvider::setFileWatcherEnabled(bool enabled) {
 }
 
 bool ConfigProvider::reload() {
+    CHECK_THREAD();
     QJsonObject newConfig;
     QJsonObject diff;
 
-    {
-        QWriteLocker locker(&m_lock);
-        if (!loadAndMergeInternal(newConfig, diff)) return false;
-        if (diff.isEmpty()) return true;
+    if (!loadAndMergeInternal(newConfig, diff)) return false;
+    if (diff.isEmpty()) return true;
 
-        m_currentConfig = newConfig;
-        m_pendingDiff = QJsonObject{};
-    }
+    m_currentConfig = newConfig;
+    m_isDirty = false;
 
     emit configChanged(diff);
     return true;
@@ -136,7 +151,6 @@ bool ConfigProvider::reload() {
 
 bool ConfigProvider::loadAndMergeInternal(QJsonObject &outConfig, QJsonObject &outDiff) {
     auto result = json_load_and_merge_with_schema(m_configPaths, m_schema);
-
     if (!result) {
         QString fullError;
         qCWarning(lcConfigProvider) << "Config Error:" << result.error().message;
@@ -154,71 +168,64 @@ bool ConfigProvider::loadAndMergeInternal(QJsonObject &outConfig, QJsonObject &o
     return true;
 }
 
-bool ConfigProvider::updateConfig(const QJsonObject &diff) {
-    QJsonObject newConfig;
-    QJsonObject actualChanges;
+std::expected<ConfigProvider::ValidatedConfig, QString> ConfigProvider::previewUpdate(const QJsonObject &diff) const
+{
+    CHECK_THREAD();
+    QJsonObject newConfig = json_merge_with_schema(m_currentConfig, diff, m_schema);
+    auto result = json_validate(newConfig, m_schema);
 
-    {
-        QWriteLocker locker(&m_lock);
+    if (!result) {
+        QString fullError;
+        for (const auto &err : result.error()) {
+            fullError += "[" + err.pointer + "] " + err.message + "\n";
+        }
+        return std::unexpected(fullError.trimmed());
+    }
 
-        newConfig = json_merge_with_schema(m_currentConfig, diff, m_schema);
-        auto result = json_validate(newConfig, m_schema);
+    if (m_validator) {
+        auto result = m_validator->validate(newConfig);
         if (!result) {
-            QString fullError;
-            for (const auto &err : result.error()) {
-                qCWarning(lcConfigProvider) << "Config Error:" << err.message;
-                fullError += "[" + err.pointer + "] " + err.message + "\n";
-            }
-            emit errorOccurred(fullError.trimmed());
-            return false;
+            return std::unexpected(result.error());
         }
+    }
 
-        actualChanges = json_diff(newConfig, m_currentConfig, JsonDiffOption::Recursive | JsonDiffOption::ExplicitNull);
+    return ValidatedConfig{newConfig};
+}
 
-        if (actualChanges.isEmpty()) return true;
+bool ConfigProvider::updateConfig(const QJsonObject &diff) {
+    CHECK_THREAD();
 
-        m_currentConfig = newConfig;
-        m_pendingDiff = json_merge_with_schema(m_pendingDiff, actualChanges, m_schema);
+    // Delegate schema merging and validation to previewUpdate to avoid duplication
+    auto preview = previewUpdate(diff);
+    if (!preview) {
+        qCWarning(lcConfigProvider) << "Config Update Error:" << preview.error();
+        emit errorOccurred(preview.error());
+        return false;
+    }
 
-        if (m_autoSaveEnabled) {
-            m_saveTimer.start();
-        }
+    return updateConfig(std::move(preview.value()));
+}
+
+bool ConfigProvider::updateConfig(ValidatedConfig&& validated) {
+    CHECK_THREAD();
+    auto actualChanges = json_diff(validated.data, m_currentConfig, JsonDiffOption::Recursive | JsonDiffOption::ExplicitNull);
+
+    if (actualChanges.isEmpty()) return true;
+
+    m_currentConfig = std::move(validated.data);
+    m_isDirty = true; // Optimization: Just mark dirty, defer heavy diffs to save()
+
+    if (m_autoSaveEnabled) {
+        m_saveTimer.start();
     }
 
     emit configChanged(actualChanges);
     return true;
 }
 
-bool ConfigProvider::updateConfig(ValidatedConfig&& validated) {
-    QWriteLocker locker(&m_lock);
-    m_currentConfig = std::move(validated.data);
-    if (m_autoSaveEnabled) {
-        m_saveTimer.start();
-    }
-    emit configChanged(m_currentConfig);
-    return true;
-}
-
-std::expected<ConfigProvider::ValidatedConfig, QString> ConfigProvider::previewUpdate(const QJsonObject &diff) const
-{
-    QReadLocker locker(&m_lock);
-    QJsonObject newConfig = json_merge_with_schema(m_currentConfig, diff, m_schema);
-
-    auto result = json_validate(newConfig, m_schema);
-    if (!result) {
-        QString fullError;
-        for (const auto &err : result.error()) {
-            fullError += err.message + "\n";
-        }
-        return std::unexpected(fullError.trimmed());
-    }
-    return ValidatedConfig{newConfig};
-}
-
 bool ConfigProvider::save() {
-    QWriteLocker locker(&m_lock);
-
-    if (m_pendingDiff.isEmpty()) return true;
+    CHECK_THREAD();
+    if (!m_isDirty) return true;
 
     QJsonObject baseConfig;
     if (m_configPaths.size() > 1) {
@@ -226,27 +233,28 @@ bool ConfigProvider::save() {
         basePaths.removeLast();
         auto baseResult = json_load_and_merge_with_schema(basePaths, m_schema,
                                                           JsonMergeOption::Recursive | JsonMergeOption::OverrideNull | JsonMergeOption::SkipNonExisting);
-        if (baseResult) baseConfig = baseResult.value();
+        if (baseResult) baseConfig = baseResult.value(); //
     }
 
+    // Defer the heavy diff calculation until right before we write it
     QJsonObject saveDiff = json_diff(m_currentConfig, baseConfig,
-                                     JsonDiffOption::Recursive | JsonDiffOption::ExplicitNull);
+                                     JsonDiffOption::Recursive | JsonDiffOption::ExplicitNull); //
 
     const QString targetPath = m_configPaths.last();
     QFileInfo targetInfo(targetPath);
     const QString finalWritePath = targetInfo.isSymLink() ? targetInfo.symLinkTarget() : targetPath;
     QDir().mkpath(QFileInfo(finalWritePath).absolutePath());
 
-    if (m_watcher && m_fileWatcherEnabled) m_watcher->blockSignals(true);
-
     QSaveFile file(finalWritePath);
     bool success = false;
     if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         file.write(QJsonDocument(saveDiff).toJson());
         if (file.commit()) {
-            qCDebug(lcConfigProvider) << "Saved configuration to" << finalWritePath;
-            m_pendingDiff = QJsonObject{};
+            // Record exactly when we saved to prevent watcher echo loops
+            m_lastSaveTime = QFileInfo(finalWritePath).lastModified();
+            m_isDirty = false;
             success = true;
+            qCDebug(lcConfigProvider) << "Saved configuration to" << finalWritePath;
         } else {
             qCCritical(lcConfigProvider) << "Failed to commit config to" << finalWritePath;
         }
@@ -258,7 +266,6 @@ bool ConfigProvider::save() {
         if (!m_watcher->files().contains(finalWritePath) && QFileInfo::exists(finalWritePath)) {
             m_watcher->addPath(finalWritePath);
         }
-        m_watcher->blockSignals(false);
     }
 
     return success;
@@ -274,14 +281,20 @@ void ConfigProvider::setupFileWatching() {
 }
 
 void ConfigProvider::onFileChanged(const QString &path) {
-    {
-        QReadLocker locker(&m_lock);
-        if (!m_fileWatcherEnabled) return;
-    }
+    CHECK_THREAD();
+    if (!m_fileWatcherEnabled) return;
 
     if (m_watcher && !m_watcher->files().contains(path) && QFileInfo::exists(path)) {
         m_watcher->addPath(path);
     }
+
+    QFileInfo info(path);
+    if (info.lastModified() <= m_lastSaveTime) {
+        return;
+    }
+    // prevent this specific version from triggering again if config file was changed externally
+    m_lastSaveTime = info.lastModified();
+
     reload();
 }
 
