@@ -1,6 +1,7 @@
 #pragma once
 
-#include "mmolch/qtutil_json.h"
+#include "mmolch/qtutil_json.h" // Needed for JsonPipelineOptions
+
 #include <QJsonObject>
 #include <QLoggingCategory>
 #include <QObject>
@@ -10,6 +11,7 @@
 #include <QThread>
 #include <QDateTime>
 #include <expected>
+#include <optional>
 
 class QFileSystemWatcher;
 
@@ -38,8 +40,8 @@ public:
     };
 
     static std::expected<ConfigProvider*, QString> create(
-        const QString &schemaPath,
         const QStringList &configPaths,
+        const QString &schemaPath, // Empty string means no schema will be loaded
         JsonPipelineOptions options = {},
         std::unique_ptr<ConfigValidator> validator = nullptr,
         QObject *parent = nullptr);
@@ -70,14 +72,14 @@ private slots:
     void onFileChanged(const QString &path);
 
 private:
-    explicit ConfigProvider(QJsonObject validatedSchema,
-                            QStringList configPaths,
+    explicit ConfigProvider(QStringList configPaths,
+                            std::optional<QJsonObject> schema,
                             JsonPipelineOptions options,
                             std::unique_ptr<ConfigValidator> validator,
                             QObject *parent);
 
-    const QJsonObject m_schema;
     const QStringList m_configPaths;
+    const std::optional<QJsonObject> m_schema;
     const JsonPipelineOptions m_options;
     const std::unique_ptr<ConfigValidator> m_validator;
 

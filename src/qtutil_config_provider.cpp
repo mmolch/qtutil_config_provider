@@ -22,13 +22,13 @@ do { \
 #endif
 
     std::expected<ConfigProvider*, QString> ConfigProvider::create(
-        const QString &schemaPath,
         const QStringList &configPaths,
+        const QString &schemaPath,
         JsonPipelineOptions options,
         std::unique_ptr<ConfigValidator> validator,
         QObject *parent)
 {
-    QJsonObject schemaObj;
+    std::optional<QJsonObject> schemaOpt = std::nullopt;
     const QJsonObject* schemaPtr = nullptr;
 
     if (!schemaPath.isEmpty()) {
@@ -37,8 +37,8 @@ do { \
             return std::unexpected(QStringLiteral("Failed to load schema from %1: %2")
                                        .arg(schemaPath, schemaResult.error().message));
         }
-        schemaObj = schemaResult.value();
-        schemaPtr = &schemaObj;
+        schemaOpt = schemaResult.value();
+        schemaPtr = &schemaOpt.value();
     }
 
     auto currentConfigResult = jsonLoadAndProcess(configPaths, schemaPtr, options);
@@ -58,7 +58,7 @@ do { \
         }
     }
 
-    ConfigProvider* provider = new ConfigProvider(schemaObj, configPaths, options, std::move(validator), parent);
+    ConfigProvider* provider = new ConfigProvider(configPaths, std::move(schemaOpt), options, std::move(validator), parent);
     provider->m_currentConfig = currentConfigResult.value();
 
     provider->m_saveTimer.setSingleShot(true);
@@ -74,14 +74,14 @@ do { \
     return provider;
 }
 
-ConfigProvider::ConfigProvider(QJsonObject validatedSchema,
-                               QStringList configPaths,
+ConfigProvider::ConfigProvider(QStringList configPaths,
+                               std::optional<QJsonObject> schema,
                                JsonPipelineOptions options,
                                std::unique_ptr<ConfigValidator> validator,
                                QObject *parent)
     : QObject(parent)
-    , m_schema{std::move(validatedSchema)}
     , m_configPaths{std::move(configPaths)}
+    , m_schema{std::move(schema)}
     , m_options{options}
     , m_validator{std::move(validator)}
     , m_autoSaveEnabled(false)
@@ -158,15 +158,15 @@ bool ConfigProvider::reload() {
 }
 
 bool ConfigProvider::loadAndMergeInternal(QJsonObject &outConfig, QJsonObject &outDiff) {
-    const QJsonObject* schemaPtr = m_schema.isEmpty() ? nullptr : &m_schema;
+    const QJsonObject* schemaPtr = m_schema ? &m_schema.value() : nullptr;
     auto result = jsonLoadAndProcess(m_configPaths, schemaPtr, m_options);
 
     if (!result) {
         QString fullError;
-        qCWarning(lcConfigProvider) << "Config Error:" << result.error().message;
+        qCWarning(lcConfigProvider) << result.error().message;
         fullError += result.error().message + "\n";
         for (const auto &err : std::as_const(result.error().validationErrors)) {
-            qCWarning(lcConfigProvider) << "Config Error:" << err.pointer << err.message;
+            qCWarning(lcConfigProvider) << err.pointer << err.message;
             fullError += "[" + err.pointer + "] " + err.message + "\n";
         }
         emit errorOccurred(fullError.trimmed());
@@ -176,7 +176,7 @@ bool ConfigProvider::loadAndMergeInternal(QJsonObject &outConfig, QJsonObject &o
     if (m_validator) {
         auto validation = m_validator->validate(result.value());
         if (!validation) {
-            qCWarning(lcConfigProvider) << "Config Error:" << validation.error();
+            qCWarning(lcConfigProvider) << validation.error();
             emit errorOccurred(validation.error());
             return false;
         }
@@ -191,7 +191,7 @@ std::expected<ConfigProvider::ValidatedConfig, QString> ConfigProvider::previewU
 {
     CHECK_THREAD();
 
-    const QJsonObject* schemaPtr = m_schema.isEmpty() ? nullptr : &m_schema;
+    const QJsonObject* schemaPtr = m_schema ? &m_schema.value() : nullptr;
 
     // Merge the current config with the diff using configured merge options
     auto mergeResult = jsonMerge(m_currentConfig, diff, schemaPtr, m_options.mergeOptions);
@@ -204,7 +204,8 @@ std::expected<ConfigProvider::ValidatedConfig, QString> ConfigProvider::previewU
     // Re-validate if a schema exists and validation is required for final states
     if (schemaPtr &&
         (m_options.validationMode == JsonValidationMode::FinalResult ||
-         m_options.validationMode == JsonValidationMode::Both))
+         m_options.validationMode == JsonValidationMode::Both ||
+         m_options.validationMode == JsonValidationMode::PartialPerFileAndFinal))
     {
         auto valResult = jsonValidate(newConfig, *schemaPtr);
         if (!valResult) {
@@ -270,7 +271,7 @@ bool ConfigProvider::save() {
         JsonPipelineOptions baseOptions = m_options;
         baseOptions.loadOptions |= JsonLoadOption::SkipNonExisting;
 
-        const QJsonObject* schemaPtr = m_schema.isEmpty() ? nullptr : &m_schema;
+        const QJsonObject* schemaPtr = m_schema ? &m_schema.value() : nullptr;
         auto baseResult = jsonLoadAndProcess(basePaths, schemaPtr, baseOptions);
         if (baseResult) baseConfig = baseResult.value();
     }

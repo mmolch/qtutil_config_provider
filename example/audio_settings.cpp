@@ -15,12 +15,13 @@ AudioSettings::AudioSettings(QObject *parent)
 
 std::expected<AudioSettings *, QString> AudioSettings::create(QObject *parent)
 {
-    auto config = ConfigProvider::create("example/data/audio.schema.json",
-                                         {
+    auto config = ConfigProvider::create({
                                              "example/data/audio.default.json",
                                              "example/data/audio.user.json",
                                              "build/audio.demo.json"
-                                         });
+                                         },
+                                         "example/data/audio.schema.json",
+                                         {.validationMode = JsonValidationMode::PartialPerFileAndFinal});
     if (!config)
         return std::unexpected(config.error());
 
