@@ -28,18 +28,21 @@ std::expected<ConfigProvider*, QString> ConfigProvider::create(
     std::unique_ptr<ConfigValidator> validator,
     QObject *parent)
 {
-    const auto schemaResult = jsonLoadAndProcess(schemaPaths);
-    if (!schemaResult) {
-        QString fullError;
-        fullError += schemaResult.error().message + "\n";
-        for (const auto &err : std::as_const(schemaResult.error().validationErrors)) {
-            fullError += "[" + err.pointer + "] " + err.message + "\n";
+    std::optional<QJsonObject> schemaOpt = std::nullopt;
+    if (!schemaPaths.isEmpty()) {
+        const auto schemaResult = jsonLoadAndProcess(schemaPaths);
+        if (!schemaResult) {
+            QString fullError;
+            fullError += schemaResult.error().message + "\n";
+            for (const auto &err : std::as_const(schemaResult.error().validationErrors)) {
+                fullError += "[" + err.pointer + "] " + err.message + "\n";
+            }
+            return std::unexpected(fullError.trimmed());
         }
-        return std::unexpected(fullError.trimmed());
+        schemaOpt = std::make_optional(std::move(schemaResult.value()));
     }
-    const auto schema = schemaResult.value();
 
-    auto currentConfigResult = jsonLoadAndProcess(configPaths, &schema, options);
+    const auto currentConfigResult = jsonLoadAndProcess(configPaths, schemaOpt ? &schemaOpt.value() : nullptr, options);
     if (!currentConfigResult) {
         QString fullError;
         fullError += currentConfigResult.error().message + "\n";
@@ -56,7 +59,7 @@ std::expected<ConfigProvider*, QString> ConfigProvider::create(
         }
     }
 
-    ConfigProvider* provider = new ConfigProvider(configPaths, std::move(schema), options, std::move(validator), parent);
+    ConfigProvider* provider = new ConfigProvider(configPaths, std::move(schemaOpt), options, std::move(validator), parent);
     provider->m_currentConfig = currentConfigResult.value();
 
     provider->m_saveTimer.setSingleShot(true);
