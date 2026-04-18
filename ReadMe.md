@@ -31,8 +31,9 @@
 using namespace mmolch::qtutil;
 
 // It can be as simple as create({"config.json"}) if you don't need advanced features.
-// This example uses a layered config with a single schema file and validates the config loosly per file
-// (without required and min constraints) and the fully merged result strictly against the schema.
+// This example uses a layered config with a single schema file and validates
+// the config loosly per file (without required and min constraints) and the
+// fully merged result strictly against the schema.
 auto provider = ConfigProvider::create(
     {
         "config.default.json",
