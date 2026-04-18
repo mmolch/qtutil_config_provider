@@ -41,7 +41,7 @@ public:
 
     static std::expected<ConfigProvider*, QString> create(
         const QStringList &configPaths,
-        const QString &schemaPath, // Empty string means no schema will be loaded
+        const QStringList &schemaPaths, // Empty string means no schema will be loaded
         JsonPipelineOptions options = {},
         std::unique_ptr<ConfigValidator> validator = nullptr,
         QObject *parent = nullptr);

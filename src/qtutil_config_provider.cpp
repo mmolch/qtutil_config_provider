@@ -21,27 +21,25 @@ do { \
 #define CHECK_THREAD() do {} while (false)
 #endif
 
-    std::expected<ConfigProvider*, QString> ConfigProvider::create(
-        const QStringList &configPaths,
-        const QString &schemaPath,
-        JsonPipelineOptions options,
-        std::unique_ptr<ConfigValidator> validator,
-        QObject *parent)
+std::expected<ConfigProvider*, QString> ConfigProvider::create(
+    const QStringList &configPaths,
+    const QStringList &schemaPaths,
+    JsonPipelineOptions options,
+    std::unique_ptr<ConfigValidator> validator,
+    QObject *parent)
 {
-    std::optional<QJsonObject> schemaOpt = std::nullopt;
-    const QJsonObject* schemaPtr = nullptr;
-
-    if (!schemaPath.isEmpty()) {
-        auto schemaResult = jsonLoad(schemaPath);
-        if (!schemaResult) {
-            return std::unexpected(QStringLiteral("Failed to load schema from %1: %2")
-                                       .arg(schemaPath, schemaResult.error().message));
+    const auto schemaResult = jsonLoadAndProcess(schemaPaths);
+    if (!schemaResult) {
+        QString fullError;
+        fullError += schemaResult.error().message + "\n";
+        for (const auto &err : std::as_const(schemaResult.error().validationErrors)) {
+            fullError += "[" + err.pointer + "] " + err.message + "\n";
         }
-        schemaOpt = schemaResult.value();
-        schemaPtr = &schemaOpt.value();
+        return std::unexpected(fullError.trimmed());
     }
+    const auto schema = schemaResult.value();
 
-    auto currentConfigResult = jsonLoadAndProcess(configPaths, schemaPtr, options);
+    auto currentConfigResult = jsonLoadAndProcess(configPaths, &schema, options);
     if (!currentConfigResult) {
         QString fullError;
         fullError += currentConfigResult.error().message + "\n";
@@ -58,7 +56,7 @@ do { \
         }
     }
 
-    ConfigProvider* provider = new ConfigProvider(configPaths, std::move(schemaOpt), options, std::move(validator), parent);
+    ConfigProvider* provider = new ConfigProvider(configPaths, std::move(schema), options, std::move(validator), parent);
     provider->m_currentConfig = currentConfigResult.value();
 
     provider->m_saveTimer.setSingleShot(true);
