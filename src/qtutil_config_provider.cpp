@@ -14,7 +14,7 @@ Q_LOGGING_CATEGORY(lcConfigProvider, "mmolch.qtutil.configprovider")
 #define CHECK_THREAD() \
 do { \
         if (QThread::currentThread() != this->thread()) { \
-            qCWarning(lcConfigProvider) << "Thread affinity violation in:" << Q_FUNC_INFO; \
+            qCWarning(lcConfigProvider).noquote().nospace() << "Thread affinity violation in:" << Q_FUNC_INFO; \
     } \
 } while (false)
 #else
@@ -161,10 +161,10 @@ bool ConfigProvider::loadAndMergeInternal(QJsonObject &outConfig, QJsonObject &o
 
     if (!result) {
         QString fullError;
-        qCWarning(lcConfigProvider) << result.error().message;
+        qCWarning(lcConfigProvider).noquote().nospace() << result.error().message;
         fullError += result.error().message + "\n";
         for (const auto &err : std::as_const(result.error().validationErrors)) {
-            qCWarning(lcConfigProvider) << err.pointer << err.message;
+            qCWarning(lcConfigProvider).noquote().nospace() << "[" << err.pointer << "] " << err.message;
             fullError += "[" + err.pointer + "] " + err.message + "\n";
         }
         emit errorOccurred(fullError.trimmed());
@@ -174,7 +174,7 @@ bool ConfigProvider::loadAndMergeInternal(QJsonObject &outConfig, QJsonObject &o
     if (m_validator) {
         auto validation = m_validator->validate(result.value());
         if (!validation) {
-            qCWarning(lcConfigProvider) << validation.error();
+            qCWarning(lcConfigProvider).noquote().nospace() << validation.error();
             emit errorOccurred(validation.error());
             return false;
         }
@@ -230,7 +230,7 @@ bool ConfigProvider::updateConfig(const QJsonObject &diff) {
     // Delegate schema merging and validation to previewUpdate to avoid duplication
     auto preview = previewUpdate(diff);
     if (!preview) {
-        qCWarning(lcConfigProvider) << "Config Update Error:" << preview.error();
+        qCWarning(lcConfigProvider).noquote().nospace() << "Config Update Error:" << preview.error();
         emit errorOccurred(preview.error());
         return false;
     }
@@ -292,12 +292,12 @@ bool ConfigProvider::save() {
             m_lastSaveTime = QFileInfo(finalWritePath).lastModified();
             m_isDirty = false;
             success = true;
-            qCDebug(lcConfigProvider) << "Saved configuration to" << finalWritePath;
+            qCDebug(lcConfigProvider).noquote().nospace() << "Saved configuration to" << finalWritePath;
         } else {
-            qCCritical(lcConfigProvider) << "Failed to commit config to" << finalWritePath;
+            qCCritical(lcConfigProvider).noquote().nospace() << "Failed to commit config to" << finalWritePath;
         }
     } else {
-        qCCritical(lcConfigProvider) << "Failed to open" << finalWritePath << "for saving:" << file.errorString();
+        qCCritical(lcConfigProvider).noquote().nospace() << "Failed to open" << finalWritePath << "for saving:" << file.errorString();
     }
 
     if (m_watcher && m_fileWatcherEnabled) {
