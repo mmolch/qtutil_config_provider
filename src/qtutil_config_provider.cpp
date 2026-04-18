@@ -1,5 +1,4 @@
 #include "mmolch/qtutil_config_provider.h"
-#include "mmolch/qtutil_json.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -22,37 +21,45 @@ do { \
 #define CHECK_THREAD() do {} while (false)
 #endif
 
-std::expected<ConfigProvider*, QString> ConfigProvider::create(
-    const QString &schemaPath,
-    const QStringList &configPaths,
-    std::unique_ptr<ConfigValidator> validator,
-    QObject *parent)
+    std::expected<ConfigProvider*, QString> ConfigProvider::create(
+        const QString &schemaPath,
+        const QStringList &configPaths,
+        JsonPipelineOptions options,
+        std::unique_ptr<ConfigValidator> validator,
+        QObject *parent)
 {
-    auto schemaResult = json_load(schemaPath);
-    if (!schemaResult) {
-        return std::unexpected(QStringLiteral("Failed to load schema from %1: %2")
-                                   .arg(schemaPath, schemaResult.error().message));
+    QJsonObject schemaObj;
+    const QJsonObject* schemaPtr = nullptr;
+
+    if (!schemaPath.isEmpty()) {
+        auto schemaResult = jsonLoad(schemaPath);
+        if (!schemaResult) {
+            return std::unexpected(QStringLiteral("Failed to load schema from %1: %2")
+                                       .arg(schemaPath, schemaResult.error().message));
+        }
+        schemaObj = schemaResult.value();
+        schemaPtr = &schemaObj;
     }
 
-    auto currentConfig = json_load_and_merge_with_schema(configPaths, schemaResult.value());
-    if (!currentConfig) {
+    auto currentConfigResult = jsonLoadAndProcess(configPaths, schemaPtr, options);
+    if (!currentConfigResult) {
         QString fullError;
-        fullError += currentConfig.error().message + "\n";
-        for (const auto &err : std::as_const(currentConfig.error().validationErrors)) {
+        fullError += currentConfigResult.error().message + "\n";
+        for (const auto &err : std::as_const(currentConfigResult.error().validationErrors)) {
             fullError += "[" + err.pointer + "] " + err.message + "\n";
         }
         return std::unexpected(fullError.trimmed());
     }
 
     if (validator) {
-        auto result = validator->validate(currentConfig.value());
+        auto result = validator->validate(currentConfigResult.value());
         if (!result) {
             return std::unexpected(result.error());
         }
     }
 
-    ConfigProvider* provider = new ConfigProvider(schemaResult.value(), configPaths, std::move(validator), parent);
-    provider->m_currentConfig = currentConfig.value();
+    ConfigProvider* provider = new ConfigProvider(schemaObj, configPaths, options, std::move(validator), parent);
+    provider->m_currentConfig = currentConfigResult.value();
 
     provider->m_saveTimer.setSingleShot(true);
     provider->m_saveTimer.setInterval(1000);
@@ -69,11 +76,13 @@ std::expected<ConfigProvider*, QString> ConfigProvider::create(
 
 ConfigProvider::ConfigProvider(QJsonObject validatedSchema,
                                QStringList configPaths,
+                               JsonPipelineOptions options,
                                std::unique_ptr<ConfigValidator> validator,
                                QObject *parent)
     : QObject(parent)
     , m_schema{std::move(validatedSchema)}
     , m_configPaths{std::move(configPaths)}
+    , m_options{options}
     , m_validator{std::move(validator)}
     , m_autoSaveEnabled(false)
     , m_fileWatcherEnabled(false)
@@ -144,13 +153,14 @@ bool ConfigProvider::reload() {
 
     m_currentConfig = newConfig;
     m_isDirty = false;
-
     emit configChanged(diff);
     return true;
 }
 
 bool ConfigProvider::loadAndMergeInternal(QJsonObject &outConfig, QJsonObject &outDiff) {
-    auto result = json_load_and_merge_with_schema(m_configPaths, m_schema);
+    const QJsonObject* schemaPtr = m_schema.isEmpty() ? nullptr : &m_schema;
+    auto result = jsonLoadAndProcess(m_configPaths, schemaPtr, m_options);
+
     if (!result) {
         QString fullError;
         qCWarning(lcConfigProvider) << "Config Error:" << result.error().message;
@@ -173,28 +183,43 @@ bool ConfigProvider::loadAndMergeInternal(QJsonObject &outConfig, QJsonObject &o
     }
 
     outConfig = result.value();
-    outDiff = json_diff(outConfig, m_currentConfig, JsonDiffOption::Recursive | JsonDiffOption::ExplicitNull);
+    outDiff = jsonDiff(outConfig, m_currentConfig, JsonDiffOption::Recursive | JsonDiffOption::ExplicitNull);
     return true;
 }
 
 std::expected<ConfigProvider::ValidatedConfig, QString> ConfigProvider::previewUpdate(const QJsonObject &diff) const
 {
     CHECK_THREAD();
-    QJsonObject newConfig = json_merge_with_schema(m_currentConfig, diff, m_schema);
-    auto result = json_validate(newConfig, m_schema);
 
-    if (!result) {
-        QString fullError;
-        for (const auto &err : result.error()) {
-            fullError += "[" + err.pointer + "] " + err.message + "\n";
+    const QJsonObject* schemaPtr = m_schema.isEmpty() ? nullptr : &m_schema;
+
+    // Merge the current config with the diff using configured merge options
+    auto mergeResult = jsonMerge(m_currentConfig, diff, schemaPtr, m_options.mergeOptions);
+    if (!mergeResult) {
+        return std::unexpected(mergeResult.error().message);
+    }
+
+    QJsonObject newConfig = mergeResult.value();
+
+    // Re-validate if a schema exists and validation is required for final states
+    if (schemaPtr &&
+        (m_options.validationMode == JsonValidationMode::FinalResult ||
+         m_options.validationMode == JsonValidationMode::Both))
+    {
+        auto valResult = jsonValidate(newConfig, *schemaPtr);
+        if (!valResult) {
+            QString fullError;
+            for (const auto &err : valResult.error()) {
+                fullError += "[" + err.pointer + "] " + err.message + "\n";
+            }
+            return std::unexpected(fullError.trimmed());
         }
-        return std::unexpected(fullError.trimmed());
     }
 
     if (m_validator) {
-        auto result = m_validator->validate(newConfig);
-        if (!result) {
-            return std::unexpected(result.error());
+        auto valResult = m_validator->validate(newConfig);
+        if (!valResult) {
+            return std::unexpected(valResult.error());
         }
     }
 
@@ -203,7 +228,6 @@ std::expected<ConfigProvider::ValidatedConfig, QString> ConfigProvider::previewU
 
 bool ConfigProvider::updateConfig(const QJsonObject &diff) {
     CHECK_THREAD();
-
     // Delegate schema merging and validation to previewUpdate to avoid duplication
     auto preview = previewUpdate(diff);
     if (!preview) {
@@ -217,12 +241,13 @@ bool ConfigProvider::updateConfig(const QJsonObject &diff) {
 
 bool ConfigProvider::updateConfig(ValidatedConfig&& validated) {
     CHECK_THREAD();
-    auto actualChanges = json_diff(validated.data, m_currentConfig, JsonDiffOption::Recursive | JsonDiffOption::ExplicitNull);
+    auto actualChanges = jsonDiff(validated.data, m_currentConfig, JsonDiffOption::Recursive | JsonDiffOption::ExplicitNull);
 
     if (actualChanges.isEmpty()) return true;
 
     m_currentConfig = std::move(validated.data);
-    m_isDirty = true; // Optimization: Just mark dirty, defer heavy diffs to save()
+    m_isDirty = true;
+    // Optimization: Just mark dirty, defer heavy diffs to save()
 
     if (m_autoSaveEnabled) {
         m_saveTimer.start();
@@ -235,19 +260,24 @@ bool ConfigProvider::updateConfig(ValidatedConfig&& validated) {
 bool ConfigProvider::save() {
     CHECK_THREAD();
     if (!m_isDirty) return true;
-
     QJsonObject baseConfig;
+
     if (m_configPaths.size() > 1) {
         QStringList basePaths = m_configPaths;
         basePaths.removeLast();
-        auto baseResult = json_load_and_merge_with_schema(basePaths, m_schema,
-                                                          JsonMergeOption::Recursive | JsonMergeOption::OverrideNull | JsonMergeOption::SkipNonExisting);
-        if (baseResult) baseConfig = baseResult.value(); //
+
+        // Temporarily append the SkipNonExisting flag specifically for generating the base merge
+        JsonPipelineOptions baseOptions = m_options;
+        baseOptions.loadOptions |= JsonLoadOption::SkipNonExisting;
+
+        const QJsonObject* schemaPtr = m_schema.isEmpty() ? nullptr : &m_schema;
+        auto baseResult = jsonLoadAndProcess(basePaths, schemaPtr, baseOptions);
+        if (baseResult) baseConfig = baseResult.value();
     }
 
     // Defer the heavy diff calculation until right before we write it
-    QJsonObject saveDiff = json_diff(m_currentConfig, baseConfig,
-                                     JsonDiffOption::Recursive | JsonDiffOption::ExplicitNull); //
+    QJsonObject saveDiff = jsonDiff(m_currentConfig, baseConfig,
+                                    JsonDiffOption::Recursive | JsonDiffOption::ExplicitNull);
 
     const QString targetPath = m_configPaths.last();
     QFileInfo targetInfo(targetPath);
@@ -292,7 +322,6 @@ void ConfigProvider::setupFileWatching() {
 void ConfigProvider::onFileChanged(const QString &path) {
     CHECK_THREAD();
     if (!m_fileWatcherEnabled) return;
-
     if (m_watcher && !m_watcher->files().contains(path) && QFileInfo::exists(path)) {
         m_watcher->addPath(path);
     }
@@ -303,7 +332,6 @@ void ConfigProvider::onFileChanged(const QString &path) {
     }
     // prevent this specific version from triggering again if config file was changed externally
     m_lastSaveTime = info.lastModified();
-
     reload();
 }
 

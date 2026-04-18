@@ -1,5 +1,6 @@
 #pragma once
 
+#include "mmolch/qtutil_json.h"
 #include <QJsonObject>
 #include <QLoggingCategory>
 #include <QObject>
@@ -19,7 +20,8 @@ Q_DECLARE_LOGGING_CATEGORY(lcConfigProvider)
 class ConfigValidator {
 public:
     virtual ~ConfigValidator() = default;
-    virtual std::expected<void, QString> validate(const QJsonObject& config) const = 0;
+    // Allows you to add constraints that can't be expressed in JSON schema
+    virtual std::expected<void, QString> validate(const QJsonObject &config) const = 0;
 };
 
 class ConfigProvider : public QObject {
@@ -38,6 +40,7 @@ public:
     static std::expected<ConfigProvider*, QString> create(
         const QString &schemaPath,
         const QStringList &configPaths,
+        JsonPipelineOptions options = {},
         std::unique_ptr<ConfigValidator> validator = nullptr,
         QObject *parent = nullptr);
 
@@ -69,20 +72,22 @@ private slots:
 private:
     explicit ConfigProvider(QJsonObject validatedSchema,
                             QStringList configPaths,
+                            JsonPipelineOptions options,
                             std::unique_ptr<ConfigValidator> validator,
                             QObject *parent);
 
     const QJsonObject m_schema;
     const QStringList m_configPaths;
+    const JsonPipelineOptions m_options;
     const std::unique_ptr<ConfigValidator> m_validator;
 
     QJsonObject m_currentConfig;
-    bool m_isDirty = false; // Replaces m_pendingDiff for massive performance gains
+    bool m_isDirty = false;
 
     bool m_autoSaveEnabled;
     bool m_fileWatcherEnabled;
 
-    QDateTime m_lastSaveTime; // Used to prevent watcher feedback loops
+    QDateTime m_lastSaveTime;
 
     QFileSystemWatcher *m_watcher = nullptr;
     QTimer m_saveTimer;
