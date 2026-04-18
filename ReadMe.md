@@ -30,13 +30,17 @@
 ```cpp
 using namespace mmolch::qtutil;
 
+// It can be as simple as create({"config.json"}) if you don't need advanced features.
+// This example uses a layered config with a single schema file and validates the config loosly per file
+// (without required and min constraints) and the fully merged result strictly against the schema.
 auto provider = ConfigProvider::create(
-    "config.schema.json",
     {
         "config.default.json",
         "config.user.json",
         "runtime.json"
-    }
+    },
+    {"config.schema.json"},
+    {.validationMode = JsonValidationMode::PartialPerFileAndFinal}
 );
 
 if (!provider) {
@@ -49,6 +53,10 @@ connect(cfg, &ConfigProvider::configChanged, [](const QJsonObject& diff){
     qDebug() << "Config updated:" << diff;
 });
 
+// Also optional
+// cfg->setAutoSaveEnabled(true);
+// cfg->setFileWatcherEnabled(true);
+
 cfg->updateConfig({{"volume", 42}});
 ```
 
@@ -57,11 +65,11 @@ cfg->updateConfig({{"volume", 42}});
 ### **Factory**
 ```cpp
 static std::expected<ConfigProvider*, QString> create(
-    const QString& schemaPath,
-    const QStringList& configPaths,
+    const QStringList &configPaths,
+    const QStringList &schemaPaths, // Empty string means no schema will be loaded
+    JsonPipelineOptions options = {},
     std::unique_ptr<ConfigValidator> validator = nullptr,
-    QObject* parent = nullptr
-);
+    QObject *parent = nullptr);
 ```
 Validates schema → loads & merges configs → returns ready‑to‑use provider.
 
