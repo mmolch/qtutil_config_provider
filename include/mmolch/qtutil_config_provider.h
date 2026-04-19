@@ -48,6 +48,7 @@ public:
     ~ConfigProvider() override;
 
     QJsonObject currentConfig() const;
+    QJsonObject schema() const;
 
     bool updateConfig(const QJsonObject &diff);
     bool updateConfig(ValidatedConfig&& validated);

@@ -107,6 +107,11 @@ QJsonObject ConfigProvider::currentConfig() const {
     return m_currentConfig;
 }
 
+QJsonObject ConfigProvider::schema() const {
+    CHECK_THREAD();
+    return m_schema;
+}
+
 bool ConfigProvider::autoSaveEnabled() const {
     CHECK_THREAD();
     return m_autoSaveEnabled;
