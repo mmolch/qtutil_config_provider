@@ -193,11 +193,9 @@ std::expected<ConfigProvider::ValidatedConfig, QString> ConfigProvider::previewU
     CHECK_THREAD();
     const QJsonObject* schemaPtr = m_schema ? &m_schema.value() : nullptr;
 
-    // Doing a partial check on the input data should be sufficient since the application
-    // is responsible for the input here (unlike external changes from manual file edits).
     const JsonProcessOptions options = {.mergeOptions = m_options.processOptions.mergeOptions,
                                         .inputValidationMode = JsonValidationMode::Partial,
-                                        .outputValidationMode = JsonValidationMode::None};
+                                        .outputValidationMode = JsonValidationMode::Full};
     const JsonProcessResult preview = jsonProcess({m_currentConfig, diff}, schemaPtr, options);
     if (!preview) {
         QString fullError = preview.error().message;
