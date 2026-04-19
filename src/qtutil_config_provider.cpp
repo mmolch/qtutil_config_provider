@@ -24,7 +24,6 @@ do { \
 std::expected<ConfigProvider*, QString> ConfigProvider::create(
     const QStringList &configPaths,
     const QStringList &schemaPaths,
-    JsonLoadAndProcessOptions options,
     std::unique_ptr<ConfigValidator> validator,
     QObject *parent)
 {
@@ -41,6 +40,15 @@ std::expected<ConfigProvider*, QString> ConfigProvider::create(
         }
         schemaOpt = std::make_optional(std::move(schemaResult.value()));
     }
+
+    const JsonLoadAndProcessOptions options = {
+        .loadOptions = JsonLoadOption::SkipNonExisting,
+        .processOptions = {
+            .mergeOptions = JsonMergeOption::Recursive | JsonMergeOption::OverrideNull,
+            .inputValidationMode = JsonValidationMode::Partial,
+            .outputValidationMode = JsonValidationMode::Full
+        }
+    };
 
     const auto currentConfigResult = jsonLoadAndProcess(configPaths, schemaOpt ? &schemaOpt.value() : nullptr, options);
     if (!currentConfigResult) {
@@ -59,7 +67,7 @@ std::expected<ConfigProvider*, QString> ConfigProvider::create(
         }
     }
 
-    ConfigProvider* provider = new ConfigProvider(configPaths, std::move(schemaOpt), options, std::move(validator), parent);
+    ConfigProvider* provider = new ConfigProvider(configPaths, std::move(schemaOpt), std::move(validator), parent);
     provider->m_currentConfig = currentConfigResult.value();
 
     provider->m_saveTimer.setSingleShot(true);
@@ -77,13 +85,11 @@ std::expected<ConfigProvider*, QString> ConfigProvider::create(
 
 ConfigProvider::ConfigProvider(QStringList configPaths,
                                std::optional<QJsonObject> schema,
-                               JsonLoadAndProcessOptions options,
                                std::unique_ptr<ConfigValidator> validator,
                                QObject *parent)
     : QObject(parent)
     , m_configPaths{std::move(configPaths)}
     , m_schema{std::move(schema)}
-    , m_options{options}
     , m_validator{std::move(validator)}
     , m_autoSaveEnabled(false)
     , m_fileWatcherEnabled(false)
@@ -160,7 +166,17 @@ bool ConfigProvider::reload() {
 
 bool ConfigProvider::loadAndMergeInternal(QJsonObject &outConfig, QJsonObject &outDiff) {
     const QJsonObject* schemaPtr = m_schema ? &m_schema.value() : nullptr;
-    auto result = jsonLoadAndProcess(m_configPaths, schemaPtr, m_options);
+
+    const JsonLoadAndProcessOptions options = {
+        .loadOptions = JsonLoadOption::SkipNonExisting,
+        .processOptions = {
+            .mergeOptions = JsonMergeOption::Recursive | JsonMergeOption::OverrideNull,
+            .inputValidationMode = JsonValidationMode::Partial,
+            .outputValidationMode = JsonValidationMode::Full
+        }
+    };
+
+    auto result = jsonLoadAndProcess(m_configPaths, schemaPtr, options);
 
     if (!result) {
         QString fullError;
@@ -193,9 +209,12 @@ std::expected<ConfigProvider::ValidatedConfig, QString> ConfigProvider::previewU
     CHECK_THREAD();
     const QJsonObject* schemaPtr = m_schema ? &m_schema.value() : nullptr;
 
-    const JsonProcessOptions options = {.mergeOptions = m_options.processOptions.mergeOptions,
-                                        .inputValidationMode = JsonValidationMode::Partial,
-                                        .outputValidationMode = JsonValidationMode::Full};
+    const JsonProcessOptions options = {
+        .mergeOptions = JsonMergeOption::Recursive | JsonMergeOption::OverrideNull,
+        .inputValidationMode = JsonValidationMode::Partial,
+        .outputValidationMode = JsonValidationMode::Full
+    };
+
     const JsonProcessResult preview = jsonProcess({m_currentConfig, diff}, schemaPtr, options);
     if (!preview) {
         QString fullError = preview.error().message;
@@ -257,12 +276,17 @@ bool ConfigProvider::save() {
         QStringList basePaths = m_configPaths;
         basePaths.removeLast();
 
-        // Temporarily append the SkipNonExisting flag specifically for generating the base merge
-        JsonLoadAndProcessOptions baseOptions = m_options;
-        baseOptions.loadOptions |= JsonLoadOption::SkipNonExisting;
+        const JsonLoadAndProcessOptions options = {
+            .loadOptions = JsonLoadOption::SkipNonExisting,
+            .processOptions = {
+                .mergeOptions = JsonMergeOption::Recursive | JsonMergeOption::OverrideNull,
+                .inputValidationMode = JsonValidationMode::Partial,
+                .outputValidationMode = JsonValidationMode::Full
+            }
+        };
 
         const QJsonObject* schemaPtr = m_schema ? &m_schema.value() : nullptr;
-        auto baseResult = jsonLoadAndProcess(basePaths, schemaPtr, baseOptions);
+        auto baseResult = jsonLoadAndProcess(basePaths, schemaPtr, options);
         if (baseResult) baseConfig = baseResult.value();
     }
 

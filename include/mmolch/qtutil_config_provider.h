@@ -42,7 +42,6 @@ public:
     static std::expected<ConfigProvider*, QString> create(
         const QStringList &configPaths,
         const QStringList &schemaPaths,
-        JsonLoadAndProcessOptions options = {},
         std::unique_ptr<ConfigValidator> validator = nullptr,
         QObject *parent = nullptr);
 
@@ -74,13 +73,11 @@ private slots:
 private:
     explicit ConfigProvider(QStringList configPaths,
                             std::optional<QJsonObject> schema,
-                            JsonLoadAndProcessOptions options,
                             std::unique_ptr<ConfigValidator> validator,
                             QObject *parent);
 
     const QStringList m_configPaths;
     const std::optional<QJsonObject> m_schema;
-    const JsonLoadAndProcessOptions m_options;
     const std::unique_ptr<ConfigValidator> m_validator;
 
     QJsonObject m_currentConfig;
