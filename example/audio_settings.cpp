@@ -21,7 +21,8 @@ std::expected<AudioSettings *, QString> AudioSettings::create(QObject *parent)
                                              "build/audio.demo.json"
                                          },
                                          {"example/data/audio.schema.json"},
-                                         {.processOptions {.inputValidationMode = JsonValidationMode::Partial}});
+                                         {.loadOptions = JsonLoadOption::SkipNonExisting,
+                                          .processOptions {.inputValidationMode = JsonValidationMode::Partial}});
     if (!config)
         return std::unexpected(config.error());
 
