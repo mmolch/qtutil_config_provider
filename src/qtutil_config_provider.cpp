@@ -107,7 +107,7 @@ QJsonObject ConfigProvider::currentConfig() const {
     return m_currentConfig;
 }
 
-QJsonObject ConfigProvider::schema() const {
+const std::optional<QJsonObject> &ConfigProvider::schema() const noexcept {
     CHECK_THREAD();
     return m_schema;
 }

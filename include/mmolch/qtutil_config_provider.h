@@ -47,16 +47,21 @@ public:
 
     ~ConfigProvider() override;
 
-    QJsonObject currentConfig() const;
-    QJsonObject schema() const;
+    [[nodiscard]]
+    QJsonObject currentConfig() const ;
+    [[nodiscard]]
+    const std::optional<QJsonObject> &schema() const noexcept;
 
     bool updateConfig(const QJsonObject &diff);
     bool updateConfig(ValidatedConfig&& validated);
+    [[nodiscard]]
     std::expected<ValidatedConfig, QString> previewUpdate(const QJsonObject &diff) const;
 
+    [[nodiscard]]
     bool autoSaveEnabled() const;
     void setAutoSaveEnabled(bool enabled);
 
+    [[nodiscard]]
     bool fileWatcherEnabled() const;
     void setFileWatcherEnabled(bool enabled);
 
