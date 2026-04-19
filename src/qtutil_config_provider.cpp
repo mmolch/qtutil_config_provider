@@ -24,7 +24,7 @@ do { \
 std::expected<ConfigProvider*, QString> ConfigProvider::create(
     const QStringList &configPaths,
     const QStringList &schemaPaths,
-    JsonPipelineOptions options,
+    JsonLoadAndProcessOptions options,
     std::unique_ptr<ConfigValidator> validator,
     QObject *parent)
 {
@@ -77,7 +77,7 @@ std::expected<ConfigProvider*, QString> ConfigProvider::create(
 
 ConfigProvider::ConfigProvider(QStringList configPaths,
                                std::optional<QJsonObject> schema,
-                               JsonPipelineOptions options,
+                               JsonLoadAndProcessOptions options,
                                std::unique_ptr<ConfigValidator> validator,
                                QObject *parent)
     : QObject(parent)
@@ -191,41 +191,33 @@ bool ConfigProvider::loadAndMergeInternal(QJsonObject &outConfig, QJsonObject &o
 std::expected<ConfigProvider::ValidatedConfig, QString> ConfigProvider::previewUpdate(const QJsonObject &diff) const
 {
     CHECK_THREAD();
-
     const QJsonObject* schemaPtr = m_schema ? &m_schema.value() : nullptr;
 
-    // Merge the current config with the diff using configured merge options
-    auto mergeResult = jsonMerge(m_currentConfig, diff, schemaPtr, m_options.mergeOptions);
-    if (!mergeResult) {
-        return std::unexpected(mergeResult.error().message);
-    }
-
-    QJsonObject newConfig = mergeResult.value();
-
-    // Re-validate if a schema exists and validation is required for final states
-    if (schemaPtr &&
-        (m_options.validationMode == JsonValidationMode::FinalResult ||
-         m_options.validationMode == JsonValidationMode::Both ||
-         m_options.validationMode == JsonValidationMode::PartialPerFileAndFinal))
-    {
-        auto valResult = jsonValidate(newConfig, *schemaPtr);
-        if (!valResult) {
+    // Doing a partial check on the input data should be sufficient since the application
+    // is responsible for the input here (unlike external changes from manual file edits).
+    const JsonProcessOptions options = {.mergeOptions = m_options.processOptions.mergeOptions,
+                                        .inputValidationMode = JsonValidationMode::Partial,
+                                        .outputValidationMode = JsonValidationMode::None};
+    const JsonProcessResult preview = jsonProcess({m_currentConfig, diff}, schemaPtr, options);
+    if (!preview) {
+        QString fullError = preview.error().message;
+        if (preview.error().code == JsonErrorCode::SchemaViolation) {
             QString fullError;
-            for (const auto &err : valResult.error()) {
+            for (const auto &err : preview.error().validationErrors) {
                 fullError += "[" + err.pointer + "] " + err.message + "\n";
             }
             return std::unexpected(fullError.trimmed());
-        }
+        };
     }
 
     if (m_validator) {
-        auto valResult = m_validator->validate(newConfig);
+        auto valResult = m_validator->validate(preview.value());
         if (!valResult) {
             return std::unexpected(valResult.error());
         }
     }
 
-    return ValidatedConfig{newConfig};
+    return ValidatedConfig{preview.value()};
 }
 
 bool ConfigProvider::updateConfig(const QJsonObject &diff) {
@@ -249,7 +241,6 @@ bool ConfigProvider::updateConfig(ValidatedConfig&& validated) {
 
     m_currentConfig = std::move(validated.data);
     m_isDirty = true;
-    // Optimization: Just mark dirty, defer heavy diffs to save()
 
     if (m_autoSaveEnabled) {
         m_saveTimer.start();
@@ -269,7 +260,7 @@ bool ConfigProvider::save() {
         basePaths.removeLast();
 
         // Temporarily append the SkipNonExisting flag specifically for generating the base merge
-        JsonPipelineOptions baseOptions = m_options;
+        JsonLoadAndProcessOptions baseOptions = m_options;
         baseOptions.loadOptions |= JsonLoadOption::SkipNonExisting;
 
         const QJsonObject* schemaPtr = m_schema ? &m_schema.value() : nullptr;
@@ -295,12 +286,12 @@ bool ConfigProvider::save() {
             m_lastSaveTime = QFileInfo(finalWritePath).lastModified();
             m_isDirty = false;
             success = true;
-            qCDebug(lcConfigProvider).noquote().nospace() << "Saved configuration to" << finalWritePath;
+            qCDebug(lcConfigProvider).noquote().nospace() << "Saved configuration to " << finalWritePath;
         } else {
-            qCCritical(lcConfigProvider).noquote().nospace() << "Failed to commit config to" << finalWritePath;
+            qCCritical(lcConfigProvider).noquote().nospace() << "Failed to commit config to " << finalWritePath;
         }
     } else {
-        qCCritical(lcConfigProvider).noquote().nospace() << "Failed to open" << finalWritePath << "for saving:" << file.errorString();
+        qCCritical(lcConfigProvider).noquote().nospace() << "Failed to open " << finalWritePath << " for saving: " << file.errorString();
     }
 
     if (m_watcher && m_fileWatcherEnabled) {
