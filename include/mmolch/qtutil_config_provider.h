@@ -40,8 +40,8 @@ public:
     };
 
     static std::expected<ConfigProvider*, QString> create(
-        const QStringList &configPaths,
-        const QStringList &schemaPaths,
+        QStringList configPaths,
+        QStringList schemaPaths = QStringList(),
         std::unique_ptr<ConfigValidator> validator = nullptr,
         QObject *parent = nullptr);
 

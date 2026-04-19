@@ -22,8 +22,8 @@ do { \
 #endif
 
 std::expected<ConfigProvider*, QString> ConfigProvider::create(
-    const QStringList &configPaths,
-    const QStringList &schemaPaths,
+    QStringList configPaths,
+    QStringList schemaPaths,
     std::unique_ptr<ConfigValidator> validator,
     QObject *parent)
 {
@@ -67,7 +67,7 @@ std::expected<ConfigProvider*, QString> ConfigProvider::create(
         }
     }
 
-    ConfigProvider* provider = new ConfigProvider(configPaths, std::move(schemaOpt), std::move(validator), parent);
+    ConfigProvider* provider = new ConfigProvider(std::move(configPaths), std::move(schemaOpt), std::move(validator), parent);
     provider->m_currentConfig = currentConfigResult.value();
 
     provider->m_saveTimer.setSingleShot(true);
