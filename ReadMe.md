@@ -30,18 +30,14 @@
 ```cpp
 using namespace mmolch::qtutil;
 
-// It can be as simple as create({"config.json"}) if you don't need advanced features.
-// This example uses a layered config with a single schema file and validates
-// the config loosly per file (without required and min constraints) and the
-// fully merged result strictly against the schema.
+// It can be as simple as create({"config.json"}) if you don't need layers/schemas.
 auto provider = ConfigProvider::create(
     {
         "config.default.json",
         "config.user.json",
         "runtime.json"
     },
-    {"config.schema.json"},
-    {.validationMode = JsonValidationMode::PartialPerFileAndFinal}
+    {"config.schema.json"}
 );
 
 if (!provider) {
