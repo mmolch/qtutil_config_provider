@@ -1,7 +1,5 @@
 #pragma once
 
-#include "mmolch/qtutil_json.h" // Needed for JsonPipelineOptions
-
 #include <QJsonObject>
 #include <QLoggingCategory>
 #include <QObject>
@@ -11,6 +9,7 @@
 #include <QThread>
 #include <QDateTime>
 #include <expected>
+#include <memory>
 #include <optional>
 
 class QFileSystemWatcher;
@@ -18,6 +17,15 @@ class QFileSystemWatcher;
 namespace mmolch::qtutil {
 
 Q_DECLARE_LOGGING_CATEGORY(lcConfigProvider)
+
+struct QObjectDeleter {
+    void operator()(QObject *obj) const {
+        if (obj) obj->deleteLater();
+    }
+};
+
+class ConfigProvider;
+using ConfigProviderPtr = std::unique_ptr<ConfigProvider, QObjectDeleter>;
 
 class ConfigValidator {
 public:
@@ -39,11 +47,11 @@ public:
         const QJsonObject& json() const { return data; }
     };
 
-    static std::expected<ConfigProvider*, QString> create(
+    [[nodiscard]]
+    static std::expected<ConfigProviderPtr, QString> create(
         QStringList configPaths,
         QStringList schemaPaths = QStringList(),
-        std::unique_ptr<ConfigValidator> validator = nullptr,
-        QObject *parent = nullptr);
+        std::unique_ptr<ConfigValidator> validator = nullptr);
 
     ~ConfigProvider() override;
 
@@ -79,8 +87,7 @@ private slots:
 private:
     explicit ConfigProvider(QStringList configPaths,
                             std::optional<QJsonObject> schema,
-                            std::unique_ptr<ConfigValidator> validator,
-                            QObject *parent);
+                            std::unique_ptr<ConfigValidator> validator);
 
     const QStringList m_configPaths;
     const std::optional<QJsonObject> m_schema;
@@ -94,7 +101,7 @@ private:
 
     QDateTime m_lastSaveTime;
 
-    QFileSystemWatcher *m_watcher = nullptr;
+    std::unique_ptr<QFileSystemWatcher, QObjectDeleter> m_watcher{nullptr};
     QTimer m_saveTimer;
 
     void setupFileWatching();

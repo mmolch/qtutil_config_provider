@@ -44,6 +44,6 @@ private slots:
 private:
     explicit AudioSettings(QObject *parent);
 
-    mmolch::qtutil::ConfigProvider *m_config = nullptr;
+    mmolch::qtutil::ConfigProviderPtr m_config{nullptr};
     AudioData m_data;
 };

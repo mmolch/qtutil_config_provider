@@ -25,13 +25,12 @@ std::expected<AudioSettings *, QString> AudioSettings::create(QObject *parent)
         return std::unexpected(config.error());
 
     auto* settings = new AudioSettings{parent};
-    config.value()->setParent(settings);
-    settings->m_config = config.value();
+    settings->m_config = std::move(config.value());
     settings->m_data = AudioData::fromJson(settings->m_config->currentConfig());
 
     // Wire up the internal config provider
-    connect(settings->m_config, &ConfigProvider::configChanged, settings, &AudioSettings::onConfigChanged);
-    connect(settings->m_config, &ConfigProvider::errorOccurred, settings, &AudioSettings::errorOccurred);
+    connect(settings->m_config.get(), &ConfigProvider::configChanged, settings, &AudioSettings::onConfigChanged);
+    connect(settings->m_config.get(), &ConfigProvider::errorOccurred, settings, &AudioSettings::errorOccurred);
 
     settings->m_config->setAutoSaveEnabled(true);
     settings->m_config->setFileWatcherEnabled(true);

@@ -1,5 +1,5 @@
 #include "mmolch/qtutil_config_provider.h"
-
+#include "mmolch/qtutil_json.h"
 #include <QDir>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
@@ -21,11 +21,10 @@ do { \
 #define CHECK_THREAD() do {} while (false)
 #endif
 
-std::expected<ConfigProvider*, QString> ConfigProvider::create(
+std::expected<ConfigProviderPtr, QString> ConfigProvider::create(
     QStringList configPaths,
     QStringList schemaPaths,
-    std::unique_ptr<ConfigValidator> validator,
-    QObject *parent)
+    std::unique_ptr<ConfigValidator> validator)
 {
     std::optional<QJsonObject> schemaOpt = std::nullopt;
     if (!schemaPaths.isEmpty()) {
@@ -67,16 +66,16 @@ std::expected<ConfigProvider*, QString> ConfigProvider::create(
         }
     }
 
-    ConfigProvider* provider = new ConfigProvider(std::move(configPaths), std::move(schemaOpt), std::move(validator), parent);
+    ConfigProviderPtr provider{new ConfigProvider(std::move(configPaths), std::move(schemaOpt), std::move(validator))};
     provider->m_currentConfig = currentConfigResult.value();
 
     provider->m_saveTimer.setSingleShot(true);
     provider->m_saveTimer.setInterval(1000);
-    connect(&provider->m_saveTimer, &QTimer::timeout, provider, &ConfigProvider::save);
+    connect(&provider->m_saveTimer, &QTimer::timeout, provider.get(), &ConfigProvider::save);
 
     if (provider->m_fileWatcherEnabled) {
-        provider->m_watcher = new QFileSystemWatcher(provider);
-        connect(provider->m_watcher, &QFileSystemWatcher::fileChanged, provider, &ConfigProvider::onFileChanged);
+        provider->m_watcher = std::unique_ptr<QFileSystemWatcher, QObjectDeleter>{new QFileSystemWatcher()};
+        connect(provider->m_watcher.get(), &QFileSystemWatcher::fileChanged, provider.get(), &ConfigProvider::onFileChanged);
         provider->setupFileWatching();
     }
 
@@ -85,9 +84,8 @@ std::expected<ConfigProvider*, QString> ConfigProvider::create(
 
 ConfigProvider::ConfigProvider(QStringList configPaths,
                                std::optional<QJsonObject> schema,
-                               std::unique_ptr<ConfigValidator> validator,
-                               QObject *parent)
-    : QObject(parent)
+                               std::unique_ptr<ConfigValidator> validator)
+    : QObject(nullptr)
     , m_configPaths{std::move(configPaths)}
     , m_schema{std::move(schema)}
     , m_validator{std::move(validator)}
@@ -141,8 +139,8 @@ void ConfigProvider::setFileWatcherEnabled(bool enabled) {
     m_fileWatcherEnabled = enabled;
     if (m_fileWatcherEnabled) {
         if (!m_watcher) {
-            m_watcher = new QFileSystemWatcher(this);
-            connect(m_watcher, &QFileSystemWatcher::fileChanged, this, &ConfigProvider::onFileChanged);
+            m_watcher = std::unique_ptr<QFileSystemWatcher, QObjectDeleter>{new QFileSystemWatcher()};
+            connect(m_watcher.get(), &QFileSystemWatcher::fileChanged, this, &ConfigProvider::onFileChanged);
         }
         setupFileWatching();
     } else {
