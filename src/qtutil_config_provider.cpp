@@ -74,7 +74,7 @@ std::expected<ConfigProviderPtr, QString> ConfigProvider::create(
     connect(&provider->m_saveTimer, &QTimer::timeout, provider.get(), &ConfigProvider::save);
 
     if (provider->m_fileWatcherEnabled) {
-        provider->m_watcher = std::unique_ptr<QFileSystemWatcher, QObjectDeleter>{new QFileSystemWatcher()};
+        provider->m_watcher = std::unique_ptr<QFileSystemWatcher, config_provider::detail::QObjectDeleter>{new QFileSystemWatcher()};
         connect(provider->m_watcher.get(), &QFileSystemWatcher::fileChanged, provider.get(), &ConfigProvider::onFileChanged);
         provider->setupFileWatching();
     }
@@ -139,7 +139,7 @@ void ConfigProvider::setFileWatcherEnabled(bool enabled) {
     m_fileWatcherEnabled = enabled;
     if (m_fileWatcherEnabled) {
         if (!m_watcher) {
-            m_watcher = std::unique_ptr<QFileSystemWatcher, QObjectDeleter>{new QFileSystemWatcher()};
+            m_watcher = std::unique_ptr<QFileSystemWatcher, config_provider::detail::QObjectDeleter>{new QFileSystemWatcher()};
             connect(m_watcher.get(), &QFileSystemWatcher::fileChanged, this, &ConfigProvider::onFileChanged);
         }
         setupFileWatching();

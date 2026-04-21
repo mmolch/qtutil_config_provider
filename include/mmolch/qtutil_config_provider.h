@@ -18,14 +18,16 @@ namespace mmolch::qtutil {
 
 Q_DECLARE_LOGGING_CATEGORY(lcConfigProvider)
 
-struct QObjectDeleter {
-    void operator()(QObject *obj) const {
-        if (obj) obj->deleteLater();
-    }
-};
+namespace config_provider::detail {
+    struct QObjectDeleter {
+        void operator()(QObject *obj) const {
+            if (obj) obj->deleteLater();
+        }
+    };
+}
 
 class ConfigProvider;
-using ConfigProviderPtr = std::unique_ptr<ConfigProvider, QObjectDeleter>;
+using ConfigProviderPtr = std::unique_ptr<ConfigProvider, config_provider::detail::QObjectDeleter>;
 
 class ConfigValidator {
 public:
@@ -101,7 +103,7 @@ private:
 
     QDateTime m_lastSaveTime;
 
-    std::unique_ptr<QFileSystemWatcher, QObjectDeleter> m_watcher{nullptr};
+    std::unique_ptr<QFileSystemWatcher, config_provider::detail::QObjectDeleter> m_watcher{nullptr};
     QTimer m_saveTimer;
 
     void setupFileWatching();
