@@ -50,12 +50,12 @@ const AudioData &AudioSettings::data() const noexcept {
 
 void AudioSettings::setVolume(int volume) {
     // Push the partial change to the config provider
-    m_config->updateConfig({{"volume", volume}});
+    m_config->changeConfig({{"volume", volume}});
 }
 
 void AudioSettings::setMuted(bool muted) {
     // Push the partial change to the config provider
-    m_config->updateConfig({{"muted", muted}});
+    m_config->changeConfig({{"muted", muted}});
 }
 
 void AudioSettings::onConfigChanged(const QJsonObject& diff) {

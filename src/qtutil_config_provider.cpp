@@ -207,7 +207,7 @@ bool ConfigProvider::loadAndMergeInternal(QJsonObject &outConfig, QJsonObject &o
     return true;
 }
 
-std::expected<ConfigProvider::ValidatedConfig, QString> ConfigProvider::previewUpdate(const QJsonObject &diff) const
+std::expected<ConfigProvider::ValidatedConfig, QString> ConfigProvider::previewChanges(const QJsonObject &changes) const
 {
     CHECK_THREAD();
     const QJsonObject* schemaPtr = m_schema ? &m_schema.value() : nullptr;
@@ -218,7 +218,7 @@ std::expected<ConfigProvider::ValidatedConfig, QString> ConfigProvider::previewU
         .outputValidationMode = JsonValidationMode::Full
     };
 
-    const JsonProcessResult preview = jsonProcess({m_currentConfig, diff}, schemaPtr, options);
+    const JsonProcessResult preview = jsonProcess({m_currentConfig, changes}, schemaPtr, options);
     if (!preview) {
         QString fullError = preview.error().message;
         if (preview.error().code == JsonErrorCode::SchemaViolation) {
@@ -240,20 +240,20 @@ std::expected<ConfigProvider::ValidatedConfig, QString> ConfigProvider::previewU
     return ValidatedConfig{preview.value()};
 }
 
-bool ConfigProvider::updateConfig(const QJsonObject &diff) {
+bool ConfigProvider::changeConfig(const QJsonObject &changes) {
     CHECK_THREAD();
-    // Delegate schema merging and validation to previewUpdate to avoid duplication
-    auto preview = previewUpdate(diff);
+    // Delegate schema merging and validation to previewChanges to avoid duplication
+    auto preview = previewChanges(changes);
     if (!preview) {
         qCWarning(lcConfigProvider).noquote().nospace() << "Config Update Error:" << preview.error();
         emit errorOccurred(preview.error());
         return false;
     }
 
-    return updateConfig(std::move(preview.value()));
+    return changeConfig(std::move(preview.value()));
 }
 
-bool ConfigProvider::updateConfig(ValidatedConfig&& validated) {
+bool ConfigProvider::changeConfig(ValidatedConfig&& validated) {
     CHECK_THREAD();
     auto actualChanges = jsonDiff(validated.data, m_currentConfig, JsonDiffOption::Recursive | JsonDiffOption::ExplicitNull);
 

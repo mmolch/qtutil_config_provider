@@ -62,10 +62,10 @@ public:
     [[nodiscard]]
     const std::optional<QJsonObject> &schema() const noexcept;
 
-    bool updateConfig(const QJsonObject &diff);
-    bool updateConfig(ValidatedConfig&& validated);
+    bool changeConfig(const QJsonObject &changes);
+    bool changeConfig(ValidatedConfig&& validated);
     [[nodiscard]]
-    std::expected<ValidatedConfig, QString> previewUpdate(const QJsonObject &diff) const;
+    std::expected<ValidatedConfig, QString> previewChanges(const QJsonObject &changes) const;
 
     [[nodiscard]]
     bool autoSaveEnabled() const;
